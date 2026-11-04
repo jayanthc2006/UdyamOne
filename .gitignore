@@ -1,0 +1,27 @@
+# Python virtual environments and bytecode
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Test, coverage, and generated output
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# Editor and operating-system generated files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+debug.log
