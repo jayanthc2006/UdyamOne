@@ -1,9 +1,16 @@
 "use client";
 
 import { type FormEvent, useState } from "react";
-import Link from "next/link";
 
 import { Icon, SiteFooter, SiteHeader } from "@/components/landing";
+import { RecommendationResults } from "@/components/recommendation-results";
+import {
+  type BusinessSegment,
+  type PrimaryRequirement,
+  type RecommendationRequest,
+  type RecommendationResponse,
+  udyamOneApi,
+} from "@/lib/api";
 
 const businessTypes = [
   "Micro retail",
@@ -44,9 +51,18 @@ const initialValues: FormValues = {
   requirements: [],
 };
 
-const tierLabels: Record<string, string> = {
-  "tier-1": "Tier 1",
-  "tier-2": "Tier 2",
+const businessSegmentMap: Record<(typeof businessTypes)[number], BusinessSegment> = {
+  "Micro retail": "micro",
+  "Professional office": "prof",
+  "Multi-site business": "multi",
+  Manufacturing: "mfg",
+};
+
+const requirementMap: Record<Requirement, PrimaryRequirement> = {
+  Connectivity: "connectivity",
+  "Business communication": "business_communication",
+  "Cloud and productivity": "cloud_productivity",
+  "Security and IoT": "security_iot",
 };
 
 function validate(values: FormValues): FormErrors {
@@ -71,9 +87,22 @@ function validate(values: FormValues): FormErrors {
   return errors;
 }
 
-function FieldError({ message }: { message?: string }) {
+function toRecommendationRequest(values: FormValues): RecommendationRequest {
+  return {
+    business_profile: {
+      city_tier: values.cityTier === "tier-1" ? 1 : 2,
+      employee_count: Number(values.employeeCount),
+      site_count: Number(values.siteCount),
+      gstin_verified: values.gstinStatus === "Verified",
+    },
+    business_segment: businessSegmentMap[values.businessType as (typeof businessTypes)[number]],
+    primary_requirements: values.requirements.map((requirement) => requirementMap[requirement]),
+  };
+}
+
+function FieldError({ id, message }: { id: string; message?: string }) {
   if (!message) return null;
-  return <p className="mt-2 text-sm font-medium text-[#c93835]" role="alert">{message}</p>;
+  return <p className="mt-2 text-sm font-medium text-[#c93835]" id={id} role="alert">{message}</p>;
 }
 
 function FieldLabel({
@@ -97,7 +126,10 @@ export default function GetStartedPage() {
   const [values, setValues] = useState<FormValues>(initialValues);
   const [errors, setErrors] = useState<FormErrors>({});
   const [touched, setTouched] = useState<Partial<Record<keyof FormValues, boolean>>>({});
-  const [submitted, setSubmitted] = useState<FormValues | null>(null);
+  const [recommendation, setRecommendation] = useState<RecommendationResponse | null>(null);
+  const [recommendationRequest, setRecommendationRequest] = useState<RecommendationRequest | null>(null);
+  const [recommendationError, setRecommendationError] = useState<string | null>(null);
+  const [recommendationLoading, setRecommendationLoading] = useState(false);
 
   const updateField = (field: EditableField, value: string) => {
     const nextValues = { ...values, [field]: value };
@@ -119,6 +151,22 @@ export default function GetStartedPage() {
     if (touched.requirements) setErrors(validate(nextValues));
   };
 
+  const requestRecommendations = async (request: RecommendationRequest) => {
+    if (recommendationLoading) return;
+    setRecommendationLoading(true);
+    setRecommendationError(null);
+    try {
+      setRecommendation(await udyamOneApi.getRecommendations(request));
+      setRecommendationRequest(request);
+    } catch (error) {
+      setRecommendationError(
+        error instanceof Error ? error.message : "We could not create recommendations right now.",
+      );
+    } finally {
+      setRecommendationLoading(false);
+    }
+  };
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const validationErrors = validate(values);
@@ -134,67 +182,30 @@ export default function GetStartedPage() {
       requirements: true,
     });
 
-    if (Object.keys(validationErrors).length) return;
-    setSubmitted(values);
+    if (Object.keys(validationErrors).length || recommendationLoading) return;
+    void requestRecommendations(toRecommendationRequest(values));
   };
 
-  if (submitted) {
+  if (recommendation) {
     return (
-      <main className="min-h-screen bg-[#fcfcfb] text-[#10223e]">
+      <>
         <SiteHeader />
-        <section className="mx-auto max-w-4xl px-5 py-16 sm:px-8 lg:py-24">
-          <div className="rounded-[1.5rem] border border-[#e4e9ee] bg-white p-6 shadow-[0_20px_45px_rgba(16,34,62,0.08)] sm:p-10">
-            <div className="flex size-12 items-center justify-center rounded-full bg-[#eaf5ed] text-[#347144]">
-              <Icon className="size-6" name="check" />
-            </div>
-            <p className="mt-6 text-xs font-semibold uppercase tracking-[0.15em] text-[#c93835]">Profile ready</p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-[-0.045em] text-[#10223e] sm:text-4xl">
-              Thanks, {submitted.businessName}.
-            </h1>
-            <p className="mt-4 max-w-2xl text-base leading-7 text-[#647287]">
-              Your business profile is ready for the next step. This is a prototype preview—nothing has been sent to or stored on a backend.
-            </p>
-
-            <div className="mt-9 rounded-2xl border border-[#e6eaef] bg-[#fbfcfd] p-5 sm:p-6">
-              <div className="flex items-center justify-between gap-4">
-                <h2 className="text-lg font-semibold tracking-[-0.025em] text-[#10223e]">Business profile summary</h2>
-                <span className="rounded-full bg-[#fdebea] px-3 py-1 text-xs font-semibold text-[#b53431]">Prototype</span>
-              </div>
-              <dl className="mt-6 grid gap-5 sm:grid-cols-2">
-                {[
-                  ["Business", submitted.businessName],
-                  ["Business type", submitted.businessType],
-                  ["Location", `${submitted.city} · ${tierLabels[submitted.cityTier]}`],
-                  ["Team", `${submitted.employeeCount} employee${submitted.employeeCount === "1" ? "" : "s"} · ${submitted.siteCount} site${submitted.siteCount === "1" ? "" : "s"}`],
-                  ["GSTIN", submitted.gstinStatus],
-                ].map(([term, detail]) => (
-                  <div key={term}>
-                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8792a1]">{term}</dt>
-                    <dd className="mt-1 text-sm font-medium text-[#2b3d56]">{detail}</dd>
-                  </div>
-                ))}
-                <div className="sm:col-span-2">
-                  <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8792a1]">Primary requirements</dt>
-                  <dd className="mt-2 flex flex-wrap gap-2">
-                    {submitted.requirements.map((requirement) => (
-                      <span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#45546a] ring-1 ring-[#dfe5eb]" key={requirement}>{requirement}</span>
-                    ))}
-                  </dd>
-                </div>
-              </dl>
-            </div>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <button className="inline-flex min-h-12 items-center justify-center rounded-lg bg-[#10223e] px-5 text-sm font-semibold text-white transition hover:bg-[#193253] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d9433f]" onClick={() => setSubmitted(null)} type="button">
-                Edit submitted details
-              </button>
-              <Link className="inline-flex min-h-12 items-center justify-center rounded-lg border border-[#d8dee7] px-5 text-sm font-semibold text-[#34465f] transition hover:bg-[#f8fafb] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d9433f]" href="/">
-                Back to UdyamOne
-              </Link>
-            </div>
-          </div>
-        </section>
+        <RecommendationResults
+          onAdvisorUpdate={(nextRecommendation, nextRequest) => {
+            setRecommendation(nextRecommendation);
+            setRecommendationRequest(nextRequest);
+          }}
+          onEdit={() => {
+            setRecommendation(null);
+            setRecommendationRequest(null);
+          }}
+          onRetry={() => void requestRecommendations(recommendationRequest ?? toRecommendationRequest(values))}
+          recommendation={recommendation}
+          request={recommendationRequest ?? toRecommendationRequest(values)}
+          retrying={recommendationLoading}
+        />
         <SiteFooter />
-      </main>
+      </>
     );
   }
 
@@ -202,6 +213,8 @@ export default function GetStartedPage() {
     `w-full rounded-lg border bg-white px-3.5 py-3 text-sm text-[#1f324c] outline-none transition placeholder:text-[#a2aab6] focus:border-[#c93835] focus:ring-4 focus:ring-[#fdebea] ${
       errors[field] && touched[field] ? "border-[#d9433f]" : "border-[#d9e0e8]"
     }`;
+  const errorId = (field: keyof FormValues) => `${field}-error`;
+  const isInvalid = (field: keyof FormValues) => Boolean(errors[field] && touched[field]);
 
   return (
     <main className="min-h-screen bg-[#fcfcfb] text-[#10223e]">
@@ -224,62 +237,64 @@ export default function GetStartedPage() {
             <span className="rounded-full bg-[#fdebea] px-3 py-1.5 text-xs font-semibold text-[#b53431]">Step 1 of 1</span>
           </div>
 
+          {recommendationError ? <div aria-live="polite" className="mt-6 rounded-xl border border-[#f1d3d1] bg-[#fff5f4] p-4 text-sm leading-6 text-[#a22f2c]">{recommendationError}<button className="ml-2 font-semibold underline" disabled={recommendationLoading} onClick={() => void requestRecommendations(toRecommendationRequest(values))} type="button">Retry</button></div> : null}
+
           <div className="mt-7 grid gap-6 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <FieldLabel htmlFor="businessName" label="Business name" description="Use the name customers and partners know you by." />
-              <input aria-describedby={errors.businessName && touched.businessName ? "businessName-error" : undefined} aria-invalid={Boolean(errors.businessName && touched.businessName)} className={inputClass("businessName")} id="businessName" onBlur={() => markTouched("businessName")} onChange={(event) => updateField("businessName", event.target.value)} placeholder="e.g. Sharma Trading Co." type="text" value={values.businessName} />
-              <div id="businessName-error"><FieldError message={touched.businessName ? errors.businessName : undefined} /></div>
+              <input aria-describedby={isInvalid("businessName") ? errorId("businessName") : undefined} aria-invalid={isInvalid("businessName")} className={inputClass("businessName")} id="businessName" onBlur={() => markTouched("businessName")} onChange={(event) => updateField("businessName", event.target.value)} placeholder="e.g. Sharma Trading Co." type="text" value={values.businessName} />
+              <FieldError id={errorId("businessName")} message={touched.businessName ? errors.businessName : undefined} />
             </div>
 
             <div>
               <FieldLabel htmlFor="businessType" label="Business type" />
-              <select aria-invalid={Boolean(errors.businessType && touched.businessType)} className={inputClass("businessType")} id="businessType" onBlur={() => markTouched("businessType")} onChange={(event) => updateField("businessType", event.target.value)} value={values.businessType}>
+              <select aria-describedby={isInvalid("businessType") ? errorId("businessType") : undefined} aria-invalid={isInvalid("businessType")} className={inputClass("businessType")} id="businessType" onBlur={() => markTouched("businessType")} onChange={(event) => updateField("businessType", event.target.value)} value={values.businessType}>
                 <option value="">Select your business type</option>
                 {businessTypes.map((type) => <option key={type} value={type}>{type}</option>)}
               </select>
-              <FieldError message={touched.businessType ? errors.businessType : undefined} />
+              <FieldError id={errorId("businessType")} message={touched.businessType ? errors.businessType : undefined} />
             </div>
 
             <div>
               <FieldLabel htmlFor="city" label="City" />
-              <input aria-invalid={Boolean(errors.city && touched.city)} className={inputClass("city")} id="city" onBlur={() => markTouched("city")} onChange={(event) => updateField("city", event.target.value)} placeholder="e.g. Pune" type="text" value={values.city} />
-              <FieldError message={touched.city ? errors.city : undefined} />
+              <input aria-describedby={isInvalid("city") ? errorId("city") : undefined} aria-invalid={isInvalid("city")} className={inputClass("city")} id="city" onBlur={() => markTouched("city")} onChange={(event) => updateField("city", event.target.value)} placeholder="e.g. Pune" type="text" value={values.city} />
+              <FieldError id={errorId("city")} message={touched.city ? errors.city : undefined} />
             </div>
 
             <div>
               <FieldLabel htmlFor="cityTier" label="City tier" description="This helps us check local service availability." />
-              <select aria-invalid={Boolean(errors.cityTier && touched.cityTier)} className={inputClass("cityTier")} id="cityTier" onBlur={() => markTouched("cityTier")} onChange={(event) => updateField("cityTier", event.target.value)} value={values.cityTier}>
+              <select aria-describedby={isInvalid("cityTier") ? errorId("cityTier") : undefined} aria-invalid={isInvalid("cityTier")} className={inputClass("cityTier")} id="cityTier" onBlur={() => markTouched("cityTier")} onChange={(event) => updateField("cityTier", event.target.value)} value={values.cityTier}>
                 <option value="">Select city tier</option>
                 <option value="tier-1">Tier 1</option>
                 <option value="tier-2">Tier 2</option>
               </select>
-              <FieldError message={touched.cityTier ? errors.cityTier : undefined} />
+              <FieldError id={errorId("cityTier")} message={touched.cityTier ? errors.cityTier : undefined} />
             </div>
 
             <div>
               <FieldLabel htmlFor="employeeCount" label="Employee count" />
-              <input aria-invalid={Boolean(errors.employeeCount && touched.employeeCount)} className={inputClass("employeeCount")} id="employeeCount" inputMode="numeric" min="1" onBlur={() => markTouched("employeeCount")} onChange={(event) => updateField("employeeCount", event.target.value)} placeholder="e.g. 12" step="1" type="number" value={values.employeeCount} />
-              <FieldError message={touched.employeeCount ? errors.employeeCount : undefined} />
+              <input aria-describedby={isInvalid("employeeCount") ? errorId("employeeCount") : undefined} aria-invalid={isInvalid("employeeCount")} className={inputClass("employeeCount")} id="employeeCount" inputMode="numeric" min="1" onBlur={() => markTouched("employeeCount")} onChange={(event) => updateField("employeeCount", event.target.value)} placeholder="e.g. 12" step="1" type="number" value={values.employeeCount} />
+              <FieldError id={errorId("employeeCount")} message={touched.employeeCount ? errors.employeeCount : undefined} />
             </div>
 
             <div>
               <FieldLabel htmlFor="siteCount" label="Number of business sites" />
-              <input aria-invalid={Boolean(errors.siteCount && touched.siteCount)} className={inputClass("siteCount")} id="siteCount" inputMode="numeric" min="1" onBlur={() => markTouched("siteCount")} onChange={(event) => updateField("siteCount", event.target.value)} placeholder="e.g. 1" step="1" type="number" value={values.siteCount} />
-              <FieldError message={touched.siteCount ? errors.siteCount : undefined} />
+              <input aria-describedby={isInvalid("siteCount") ? errorId("siteCount") : undefined} aria-invalid={isInvalid("siteCount")} className={inputClass("siteCount")} id="siteCount" inputMode="numeric" min="1" onBlur={() => markTouched("siteCount")} onChange={(event) => updateField("siteCount", event.target.value)} placeholder="e.g. 1" step="1" type="number" value={values.siteCount} />
+              <FieldError id={errorId("siteCount")} message={touched.siteCount ? errors.siteCount : undefined} />
             </div>
 
             <div className="sm:col-span-2">
-              <FieldLabel htmlFor="gstinStatus" label="GSTIN status" description="Some business services require GSTIN verification." />
-              <select aria-invalid={Boolean(errors.gstinStatus && touched.gstinStatus)} className={inputClass("gstinStatus")} id="gstinStatus" onBlur={() => markTouched("gstinStatus")} onChange={(event) => updateField("gstinStatus", event.target.value)} value={values.gstinStatus}>
+              <FieldLabel htmlFor="gstinStatus" label="GSTIN status" description="Only your self-reported Verified selection is sent as verified in this prototype; UdyamOne does not verify GSTIN here." />
+              <select aria-describedby={isInvalid("gstinStatus") ? errorId("gstinStatus") : undefined} aria-invalid={isInvalid("gstinStatus")} className={inputClass("gstinStatus")} id="gstinStatus" onBlur={() => markTouched("gstinStatus")} onChange={(event) => updateField("gstinStatus", event.target.value)} value={values.gstinStatus}>
                 <option value="">Select GSTIN status</option>
                 <option value="Verified">Verified</option>
                 <option value="Not verified">Not verified</option>
                 <option value="Not registered">Not registered</option>
               </select>
-              <FieldError message={touched.gstinStatus ? errors.gstinStatus : undefined} />
+              <FieldError id={errorId("gstinStatus")} message={touched.gstinStatus ? errors.gstinStatus : undefined} />
             </div>
 
-            <fieldset className="sm:col-span-2" onBlur={() => markTouched("requirements")}>
+            <fieldset aria-describedby={isInvalid("requirements") ? errorId("requirements") : undefined} className="sm:col-span-2" onBlur={() => markTouched("requirements")}>
               <legend className="text-sm font-semibold text-[#263952]">Primary business requirements</legend>
               <p className="mt-1 text-xs leading-5 text-[#778396]">Select every area you would like to improve. You can choose more than one.</p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -293,14 +308,14 @@ export default function GetStartedPage() {
                   );
                 })}
               </div>
-              <FieldError message={touched.requirements ? errors.requirements : undefined} />
+              <FieldError id={errorId("requirements")} message={touched.requirements ? errors.requirements : undefined} />
             </fieldset>
           </div>
 
           <div className="mt-8 flex flex-col gap-3 border-t border-[#edf0f3] pt-6 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs leading-5 text-[#7b8797]">Prototype only. Your details are not sent to or stored by UdyamOne.</p>
-            <button className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[#d9433f] px-5 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(201,56,53,0.18)] transition hover:bg-[#c33532] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#10223e]" type="submit">
-              Continue <Icon className="size-4" name="arrow" />
+            <p className="text-xs leading-5 text-[#7b8797]">Your details are used only to request this prototype recommendation preview. Nothing is persisted by this frontend.</p>
+            <button className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[#d9433f] px-5 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(201,56,53,0.18)] transition hover:bg-[#c33532] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#10223e] disabled:cursor-not-allowed disabled:opacity-60" disabled={recommendationLoading} type="submit">
+              {recommendationLoading ? "Finding solutions…" : "See my solutions"} <Icon className="size-4" name="arrow" />
             </button>
           </div>
         </form>

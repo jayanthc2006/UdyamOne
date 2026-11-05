@@ -1,10 +1,32 @@
 """FastAPI application entry point."""
 
+import os
+
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.health import router as health_router
 from app.api.router import api_router
 
+DEFAULT_ALLOWED_ORIGINS = ("http://localhost:3000", "http://127.0.0.1:3000")
+
+
+def get_allowed_origins() -> list[str]:
+    """Read development origins from the comma-separated UDYAMONE_ALLOWED_ORIGINS."""
+    configured_origins = os.getenv("UDYAMONE_ALLOWED_ORIGINS")
+    if not configured_origins:
+        return list(DEFAULT_ALLOWED_ORIGINS)
+    origins = [origin.strip() for origin in configured_origins.split(",") if origin.strip()]
+    return [origin for origin in origins if origin != "*"] or list(DEFAULT_ALLOWED_ORIGINS)
+
+
 app = FastAPI(title="UdyamOne API", version="0.1.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_allowed_origins(),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
+)
 app.include_router(health_router)
 app.include_router(api_router)

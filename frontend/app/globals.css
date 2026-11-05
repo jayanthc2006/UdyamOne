@@ -3,19 +3,21 @@
 :root {
   --background: #fcfcfb;
   --foreground: #10223e;
+  --font-udyam-sans: "Segoe UI", Arial, Helvetica, sans-serif;
+  --font-udyam-mono: "Cascadia Code", "Courier New", monospace;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-udyam-sans);
+  --font-mono: var(--font-udyam-mono);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans, Arial), Helvetica, sans-serif;
+  font-family: var(--font-udyam-sans);
 }
 
 html {
@@ -41,4 +43,9 @@ html {
 
 .footer-link {
   transition: color 160ms ease;
+}
+
+:where(a, button, input, select):focus-visible {
+  outline: 2px solid #c93835;
+  outline-offset: 3px;
 }

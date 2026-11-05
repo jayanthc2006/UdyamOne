@@ -37,6 +37,31 @@ From the `backend` directory:
 pytest
 ```
 
+## AI business advisor
+
+The advisor is optional. It returns an explicit `503` response when the backend
+LLM provider is not configured. Copy `backend\.env.example` as a reference and
+set these variables in the backend process environment:
+
+```powershell
+$env:UDYAMONE_LLM_API_KEY = "your-provider-key"
+$env:UDYAMONE_LLM_BASE_URL = "https://api.openai.com/v1"
+$env:UDYAMONE_LLM_MODEL = "your-compatible-model"
+$env:UDYAMONE_LLM_TIMEOUT_SECONDS = "20"
+```
+
+Keep the key on the backend; do not use a `NEXT_PUBLIC_` variable. The adapter
+posts to the OpenAI-compatible `/chat/completions` endpoint. The provider handles
+message interpretation and response wording; the existing recommendation,
+eligibility, dependency and pricing services remain authoritative. Chat content
+is held only in browser memory and is sent to the configured provider per turn.
+
+`POST /api/v1/advisor/chat` accepts the business profile, segment, current
+requirement categories, bounded conversation messages and a language (`en`,
+`hi`, `te`, `ta` or `kn`). Its response contains a conversational reply,
+validated extracted categories and separately structured catalogue-backed
+recommendations when applicable.
+
 ## Layout
 
 - `backend/app/api/` — HTTP routes

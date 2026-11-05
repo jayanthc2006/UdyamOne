@@ -2,7 +2,7 @@
 
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import app, get_allowed_origins
 
 client = TestClient(app)
 
@@ -154,3 +154,76 @@ def test_rejects_invalid_quote_requests() -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_returns_catalogue_backed_recommendations() -> None:
+    response = client.post(
+        "/api/v1/recommendations",
+        json={
+            "business_profile": _basic_profile(),
+            "business_segment": "micro",
+            "primary_requirements": ["connectivity"],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["bundles"]
+    assert any(bundle["bundle_type"] == "recommended" for bundle in payload["bundles"])
+
+
+def test_recommendation_request_rejects_duplicate_requirements() -> None:
+    response = client.post(
+        "/api/v1/recommendations",
+        json={
+            "business_profile": _basic_profile(),
+            "business_segment": "micro",
+            "primary_requirements": ["connectivity", "connectivity"],
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_recommendation_request_reports_unsupported_requirements() -> None:
+    response = client.post(
+        "/api/v1/recommendations",
+        json={
+            "business_profile": {
+                "city_tier": 3,
+                "employee_count": 1,
+                "site_count": 1,
+                "gstin_verified": False,
+            },
+            "business_segment": "micro",
+            "primary_requirements": ["cloud_productivity"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["unsupported_requirements"] == ["cloud_productivity"]
+
+
+def test_configured_cors_origins_exclude_wildcards(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "UDYAMONE_ALLOWED_ORIGINS",
+        "https://app.example.test, *, https://partner.example.test",
+    )
+
+    assert get_allowed_origins() == [
+        "https://app.example.test",
+        "https://partner.example.test",
+    ]
+
+
+def test_allows_configured_default_cors_origin() -> None:
+    response = client.options(
+        "/api/v1/recommendations",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"

@@ -120,7 +120,7 @@ export default function Home() {
       <section className="mx-auto grid max-w-7xl gap-12 px-5 py-20 sm:px-8 lg:grid-cols-[0.88fr_1.12fr] lg:items-center lg:gap-20 lg:px-10 lg:py-28" id="business-services">
         <div>
           <SectionHeading eyebrow="Why UdyamOne" title="Designed to make the next right move feel obvious." description="The journey is intentionally practical: less searching, less uncertainty and a more confident way to build your digital business." />
-          <a className="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-[#c93835] transition hover:gap-3" href="#get-started">
+          <a className="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-[#c93835] transition hover:gap-3" href="#how-it-works">
             See how it works <Icon className="size-4" name="arrow" />
           </a>
         </div>

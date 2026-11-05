@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 
 type IconName =
@@ -95,6 +97,20 @@ export function Wordmark({
 }
 
 export function SiteHeader() {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isMobileMenuOpen) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsMobileMenuOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [isMobileMenuOpen]);
+
+  const closeMobileMenu = () => setIsMobileMenuOpen(false);
+
   return (
     <header className="border-b border-[#e9edf1]/80 bg-[#fcfcfb]/95 backdrop-blur">
       <div className="mx-auto flex h-[74px] max-w-7xl items-center justify-between px-5 sm:px-8 lg:px-10">
@@ -117,8 +133,33 @@ export function SiteHeader() {
           >
             Get started
           </Link>
+          <button
+            aria-controls="mobile-primary-navigation"
+            aria-expanded={isMobileMenuOpen}
+            aria-label={isMobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+            className="inline-flex size-10 items-center justify-center rounded-lg border border-[#d8dee7] text-[#31445e] transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835] lg:hidden"
+            onClick={() => setIsMobileMenuOpen((isOpen) => !isOpen)}
+            type="button"
+          >
+            <span aria-hidden="true" className="grid gap-1.5">
+              <span className="h-0.5 w-4 rounded-full bg-current" />
+              <span className="h-0.5 w-4 rounded-full bg-current" />
+              <span className="h-0.5 w-4 rounded-full bg-current" />
+            </span>
+          </button>
         </div>
       </div>
+      <nav
+        aria-label="Mobile primary navigation"
+        className={`${isMobileMenuOpen ? "border-t border-[#e9edf1] bg-[#fcfcfb]" : "hidden"} lg:hidden`}
+        id="mobile-primary-navigation"
+      >
+        <div className="mx-auto grid max-w-7xl gap-1 px-5 py-4 sm:px-8">
+          <Link className="nav-link rounded-lg px-3 py-3 hover:bg-white" href="/#solutions" onClick={closeMobileMenu}>Solutions</Link>
+          <Link className="nav-link rounded-lg px-3 py-3 hover:bg-white" href="/#how-it-works" onClick={closeMobileMenu}>How it works</Link>
+          <Link className="nav-link rounded-lg px-3 py-3 hover:bg-white" href="/#business-services" onClick={closeMobileMenu}>Business services</Link>
+        </div>
+      </nav>
     </header>
   );
 }
