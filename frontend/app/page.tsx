@@ -51,7 +51,7 @@ const benefits = [
 
 export default function Home() {
   return (
-    <main className="overflow-hidden bg-[#fcfcfb] text-[#10223e]" id="top">
+    <main className="overflow-x-hidden bg-[#fcfcfb] text-[#10223e]" id="top">
       <SiteHeader />
 
       <section className="relative">

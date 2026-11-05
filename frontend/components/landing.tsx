@@ -252,8 +252,8 @@ export function SolutionCard({
 
 export function DashboardPreview() {
   return (
-    <div className="relative mx-auto w-full max-w-[580px]">
-      <div className="absolute -inset-7 -z-10 rounded-[2.5rem] bg-[#f4ece8]" />
+    <div className="relative mx-auto w-full max-w-[560px] min-w-0">
+      <div className="absolute -inset-5 -z-10 rounded-[2rem] bg-[#f4ece8] sm:-inset-7" />
       <div className="overflow-hidden rounded-[1.35rem] border border-[#dfe4eb] bg-white shadow-[0_28px_70px_rgba(18,37,65,0.15)]">
         <div className="flex items-center justify-between border-b border-[#eef0f3] px-4 py-3 sm:px-5">
           <div className="flex items-center gap-2">
@@ -266,7 +266,7 @@ export function DashboardPreview() {
           </p>
           <span className="size-4" />
         </div>
-        <div className="grid grid-cols-[94px_1fr] sm:grid-cols-[116px_1fr]">
+        <div className="grid grid-cols-1 sm:grid-cols-[96px_minmax(0,1fr)] lg:grid-cols-[116px_minmax(0,1fr)]">
           <aside className="hidden border-r border-[#edf0f3] bg-[#fbfcfd] p-3 sm:block">
             <p className="px-2 pb-5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#9aa4b2]">
               Journey
@@ -284,8 +284,8 @@ export function DashboardPreview() {
               </div>
             ))}
           </aside>
-          <div className="bg-[#fff] p-4 sm:p-6">
-            <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 bg-[#fff] p-3 sm:p-5 lg:p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#c93835]">
                   Your business
@@ -294,14 +294,14 @@ export function DashboardPreview() {
                   Your digital foundation
                 </h3>
               </div>
-              <span className="rounded-full bg-[#eaf5ed] px-2.5 py-1 text-[10px] font-semibold text-[#357044]">
+              <span className="inline-flex w-fit rounded-full bg-[#eaf5ed] px-2.5 py-1 text-[10px] font-semibold text-[#357044]">
                 Profile complete
               </span>
             </div>
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
               <div className="rounded-xl border border-[#e7ebf0] p-3.5">
-                <div className="flex items-center justify-between">
-                  <Icon className="size-4 text-[#c93835]" name="connectivity" />
+                <div className="flex items-center justify-between gap-2">
+                  <Icon className="size-4 shrink-0 text-[#c93835]" name="connectivity" />
                   <span className="text-[10px] font-semibold text-[#568f65]">Match</span>
                 </div>
                 <p className="mt-4 text-xs font-semibold text-[#1c2d47]">Business Fibre</p>
@@ -311,8 +311,8 @@ export function DashboardPreview() {
                 </div>
               </div>
               <div className="rounded-xl border border-[#e7ebf0] p-3.5">
-                <div className="flex items-center justify-between">
-                  <Icon className="size-4 text-[#2d5e9e]" name="cloud" />
+                <div className="flex items-center justify-between gap-2">
+                  <Icon className="size-4 shrink-0 text-[#2d5e9e]" name="cloud" />
                   <span className="text-[10px] font-semibold text-[#568f65]">Match</span>
                 </div>
                 <p className="mt-4 text-xs font-semibold text-[#1c2d47]">Cloud Office</p>
@@ -322,17 +322,17 @@ export function DashboardPreview() {
                 </div>
               </div>
             </div>
-            <div className="mt-4 flex items-center justify-between rounded-xl bg-[#10223e] px-4 py-3 text-white">
-              <div>
+            <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-[#10223e] px-3 py-3 text-white sm:px-4">
+              <div className="min-w-0">
                 <p className="text-[10px] font-medium text-[#bdc6d3]">Your estimated plan</p>
                 <p className="mt-1 text-sm font-semibold">Built around your needs</p>
               </div>
-              <span className="rounded-lg bg-white/10 px-2.5 py-1.5 text-[10px] font-semibold">View quote</span>
+              <span className="shrink-0 rounded-lg bg-white/10 px-2.5 py-1.5 text-[10px] font-semibold">View quote</span>
             </div>
           </div>
         </div>
       </div>
-      <div className="absolute -bottom-5 -left-4 hidden rounded-xl border border-[#e2e7ed] bg-white px-4 py-3 shadow-[0_12px_30px_rgba(16,34,62,0.12)] sm:block">
+      <div className="absolute -bottom-5 -left-3 hidden rounded-xl border border-[#e2e7ed] bg-white px-4 py-3 shadow-[0_12px_30px_rgba(16,34,62,0.12)] sm:-left-4 sm:block">
         <div className="flex items-center gap-2">
           <span className="grid size-7 place-items-center rounded-full bg-[#eaf5ed] text-[#398149]">
             <Icon className="size-3.5" name="check" />

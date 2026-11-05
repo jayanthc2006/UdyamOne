@@ -102,7 +102,11 @@ function toRecommendationRequest(values: FormValues): RecommendationRequest {
 
 function FieldError({ id, message }: { id: string; message?: string }) {
   if (!message) return null;
-  return <p className="mt-2 text-sm font-medium text-[#c93835]" id={id} role="alert">{message}</p>;
+  return (
+    <p aria-live="polite" aria-atomic="true" className="mt-2 text-sm font-medium text-[#c93835]" id={id} role="alert">
+      {message}
+    </p>
+  );
 }
 
 function FieldLabel({
@@ -242,13 +246,13 @@ export default function GetStartedPage() {
           <div className="mt-7 grid gap-6 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <FieldLabel htmlFor="businessName" label="Business name" description="Use the name customers and partners know you by." />
-              <input aria-describedby={isInvalid("businessName") ? errorId("businessName") : undefined} aria-invalid={isInvalid("businessName")} className={inputClass("businessName")} id="businessName" onBlur={() => markTouched("businessName")} onChange={(event) => updateField("businessName", event.target.value)} placeholder="e.g. Sharma Trading Co." type="text" value={values.businessName} />
+              <input aria-describedby={isInvalid("businessName") ? errorId("businessName") : undefined} aria-invalid={isInvalid("businessName")} aria-required="true" className={inputClass("businessName")} id="businessName" onBlur={() => markTouched("businessName")} onChange={(event) => updateField("businessName", event.target.value)} placeholder="e.g. Sharma Trading Co." type="text" value={values.businessName} />
               <FieldError id={errorId("businessName")} message={touched.businessName ? errors.businessName : undefined} />
             </div>
 
             <div>
               <FieldLabel htmlFor="businessType" label="Business type" />
-              <select aria-describedby={isInvalid("businessType") ? errorId("businessType") : undefined} aria-invalid={isInvalid("businessType")} className={inputClass("businessType")} id="businessType" onBlur={() => markTouched("businessType")} onChange={(event) => updateField("businessType", event.target.value)} value={values.businessType}>
+              <select aria-describedby={isInvalid("businessType") ? errorId("businessType") : undefined} aria-invalid={isInvalid("businessType")} aria-required="true" className={inputClass("businessType")} id="businessType" onBlur={() => markTouched("businessType")} onChange={(event) => updateField("businessType", event.target.value)} value={values.businessType}>
                 <option value="">Select your business type</option>
                 {businessTypes.map((type) => <option key={type} value={type}>{type}</option>)}
               </select>
@@ -257,13 +261,13 @@ export default function GetStartedPage() {
 
             <div>
               <FieldLabel htmlFor="city" label="City" />
-              <input aria-describedby={isInvalid("city") ? errorId("city") : undefined} aria-invalid={isInvalid("city")} className={inputClass("city")} id="city" onBlur={() => markTouched("city")} onChange={(event) => updateField("city", event.target.value)} placeholder="e.g. Pune" type="text" value={values.city} />
+              <input aria-describedby={isInvalid("city") ? errorId("city") : undefined} aria-invalid={isInvalid("city")} aria-required="true" className={inputClass("city")} id="city" onBlur={() => markTouched("city")} onChange={(event) => updateField("city", event.target.value)} placeholder="e.g. Pune" type="text" value={values.city} />
               <FieldError id={errorId("city")} message={touched.city ? errors.city : undefined} />
             </div>
 
             <div>
               <FieldLabel htmlFor="cityTier" label="City tier" description="This helps us check local service availability." />
-              <select aria-describedby={isInvalid("cityTier") ? errorId("cityTier") : undefined} aria-invalid={isInvalid("cityTier")} className={inputClass("cityTier")} id="cityTier" onBlur={() => markTouched("cityTier")} onChange={(event) => updateField("cityTier", event.target.value)} value={values.cityTier}>
+              <select aria-describedby={isInvalid("cityTier") ? errorId("cityTier") : undefined} aria-invalid={isInvalid("cityTier")} aria-required="true" className={inputClass("cityTier")} id="cityTier" onBlur={() => markTouched("cityTier")} onChange={(event) => updateField("cityTier", event.target.value)} value={values.cityTier}>
                 <option value="">Select city tier</option>
                 <option value="tier-1">Tier 1</option>
                 <option value="tier-2">Tier 2</option>
@@ -273,19 +277,19 @@ export default function GetStartedPage() {
 
             <div>
               <FieldLabel htmlFor="employeeCount" label="Employee count" />
-              <input aria-describedby={isInvalid("employeeCount") ? errorId("employeeCount") : undefined} aria-invalid={isInvalid("employeeCount")} className={inputClass("employeeCount")} id="employeeCount" inputMode="numeric" min="1" onBlur={() => markTouched("employeeCount")} onChange={(event) => updateField("employeeCount", event.target.value)} placeholder="e.g. 12" step="1" type="number" value={values.employeeCount} />
+              <input aria-describedby={isInvalid("employeeCount") ? errorId("employeeCount") : undefined} aria-invalid={isInvalid("employeeCount")} aria-required="true" className={inputClass("employeeCount")} id="employeeCount" inputMode="numeric" min="1" onBlur={() => markTouched("employeeCount")} onChange={(event) => updateField("employeeCount", event.target.value)} placeholder="e.g. 12" step="1" type="number" value={values.employeeCount} />
               <FieldError id={errorId("employeeCount")} message={touched.employeeCount ? errors.employeeCount : undefined} />
             </div>
 
             <div>
               <FieldLabel htmlFor="siteCount" label="Number of business sites" />
-              <input aria-describedby={isInvalid("siteCount") ? errorId("siteCount") : undefined} aria-invalid={isInvalid("siteCount")} className={inputClass("siteCount")} id="siteCount" inputMode="numeric" min="1" onBlur={() => markTouched("siteCount")} onChange={(event) => updateField("siteCount", event.target.value)} placeholder="e.g. 1" step="1" type="number" value={values.siteCount} />
+              <input aria-describedby={isInvalid("siteCount") ? errorId("siteCount") : undefined} aria-invalid={isInvalid("siteCount")} aria-required="true" className={inputClass("siteCount")} id="siteCount" inputMode="numeric" min="1" onBlur={() => markTouched("siteCount")} onChange={(event) => updateField("siteCount", event.target.value)} placeholder="e.g. 1" step="1" type="number" value={values.siteCount} />
               <FieldError id={errorId("siteCount")} message={touched.siteCount ? errors.siteCount : undefined} />
             </div>
 
             <div className="sm:col-span-2">
               <FieldLabel htmlFor="gstinStatus" label="GSTIN status" description="Only your self-reported Verified selection is sent as verified in this prototype; UdyamOne does not verify GSTIN here." />
-              <select aria-describedby={isInvalid("gstinStatus") ? errorId("gstinStatus") : undefined} aria-invalid={isInvalid("gstinStatus")} className={inputClass("gstinStatus")} id="gstinStatus" onBlur={() => markTouched("gstinStatus")} onChange={(event) => updateField("gstinStatus", event.target.value)} value={values.gstinStatus}>
+              <select aria-describedby={isInvalid("gstinStatus") ? errorId("gstinStatus") : undefined} aria-invalid={isInvalid("gstinStatus")} aria-required="true" className={inputClass("gstinStatus")} id="gstinStatus" onBlur={() => markTouched("gstinStatus")} onChange={(event) => updateField("gstinStatus", event.target.value)} value={values.gstinStatus}>
                 <option value="">Select GSTIN status</option>
                 <option value="Verified">Verified</option>
                 <option value="Not verified">Not verified</option>
@@ -294,7 +298,7 @@ export default function GetStartedPage() {
               <FieldError id={errorId("gstinStatus")} message={touched.gstinStatus ? errors.gstinStatus : undefined} />
             </div>
 
-            <fieldset aria-describedby={isInvalid("requirements") ? errorId("requirements") : undefined} className="sm:col-span-2" onBlur={() => markTouched("requirements")}>
+            <fieldset aria-describedby={isInvalid("requirements") ? errorId("requirements") : undefined} aria-invalid={isInvalid("requirements")} aria-required="true" className="sm:col-span-2" onBlur={() => markTouched("requirements")}>
               <legend className="text-sm font-semibold text-[#263952]">Primary business requirements</legend>
               <p className="mt-1 text-xs leading-5 text-[#778396]">Select every area you would like to improve. You can choose more than one.</p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
