@@ -11,12 +11,14 @@ import uuid
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Mapping
+from datetime import datetime, timezone
 
 import pypdfium2 as pdfium
 from PIL import Image, UnidentifiedImageError
 
 from app.models.kyc import (
     KycAssessment,
+    KycConsentState,
     KycDocumentPresence,
     KycDocumentState,
     KycDocumentType,
@@ -36,6 +38,7 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_IMAGE_PIXELS = 30_000_000
 MAX_PDF_PAGES = 10
 OCR_TIMEOUT_SECONDS = 90
+KYC_CONSENT_VERSION = "kyc-consent-v1"
 SUPPORTED_MIME_TYPES = {
     "image/png": (".png", b"\x89PNG\r\n\x1a\n"),
     "image/jpeg": (".jpg", b"\xff\xd8\xff"),
@@ -65,6 +68,10 @@ class KycConfigurationError(ValueError):
 
 class KycStateError(RuntimeError):
     """Raised when local KYC workflow state cannot be read or saved."""
+
+
+class KycConsentRequiredError(RuntimeError):
+    """Raised when a consent-gated KYC action is attempted without consent."""
 
 
 class KycUploadValidationError(ValueError):
@@ -126,7 +133,13 @@ def _manifest_path(applicant_id: str) -> Path:
 def _read_manifest(applicant_id: str) -> dict[str, Any]:
     path = _manifest_path(applicant_id)
     if not path.exists():
-        return {"version": 2, "documents": {}, "profile": {}}
+        return {
+            "version": 2,
+            "documents": {},
+            "profile": {},
+            "consent_history": [],
+            "requested_documents": [],
+        }
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
@@ -164,7 +177,93 @@ def _read_manifest(applicant_id: str) -> dict[str, Any]:
     profile = payload.get("profile", {})
     if not isinstance(profile, dict):
         raise KycStateError("Stored KYC profile has an invalid format.")
-    return {"version": 2, "documents": documents, "profile": profile}
+    consent_history = payload.get("consent_history", [])
+    if not isinstance(consent_history, list):
+        raise KycStateError("Stored KYC consent state has an invalid format.")
+    try:
+        for consent in consent_history:
+            consent_state = KycConsentState.model_validate(consent)
+            if consent_state.applicant_id != applicant_id:
+                raise ValueError("Consent applicant does not match the manifest.")
+    except (TypeError, ValueError) as error:
+        raise KycStateError("Stored KYC consent state has an invalid format.") from error
+    requested_documents = payload.get("requested_documents", [])
+    if not isinstance(requested_documents, list):
+        raise KycStateError("Stored additional-document requests have an invalid format.")
+    try:
+        requested_documents = list(dict.fromkeys(
+            KycDocumentType(document_type).value for document_type in requested_documents
+        ))
+    except (TypeError, ValueError) as error:
+        raise KycStateError(
+            "Stored additional-document requests have an invalid format."
+        ) from error
+    return {
+        "version": 2,
+        "documents": documents,
+        "profile": profile,
+        "consent_history": consent_history,
+        "requested_documents": requested_documents,
+    }
+
+
+def _current_consent(manifest: Mapping[str, Any]) -> KycConsentState | None:
+    history = manifest.get("consent_history", [])
+    if not history:
+        return None
+    try:
+        return KycConsentState.model_validate(history[-1])
+    except (TypeError, ValueError) as error:
+        raise KycStateError("Stored KYC consent state has an invalid format.") from error
+
+
+def require_current_consent(applicant_id: str) -> KycConsentState:
+    validate_applicant_id(applicant_id)
+    consent = _current_consent(_read_manifest(applicant_id))
+    if (
+        consent is None
+        or not consent.consented
+        or consent.consent_version != KYC_CONSENT_VERSION
+    ):
+        raise KycConsentRequiredError(
+            "Current KYC consent is required before uploading or processing documents."
+        )
+    return consent
+
+
+def record_consent(applicant_id: str, consented: bool) -> KycAssessment:
+    validate_applicant_id(applicant_id)
+    required = get_required_document_types()
+    lock = _lock_for(applicant_id)
+    with lock:
+        manifest = _read_manifest(applicant_id)
+        consent = KycConsentState(
+            applicant_id=applicant_id,
+            consented=consented,
+            consent_version=KYC_CONSENT_VERSION,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        )
+        manifest["consent_history"].append(consent.model_dump(mode="json"))
+        _write_manifest(applicant_id, manifest)
+        return get_assessment(applicant_id, required)
+
+
+def request_additional_documents(
+    applicant_id: str,
+    document_types: list[KycDocumentType],
+) -> KycAssessment:
+    validate_applicant_id(applicant_id)
+    required = get_required_document_types()
+    lock = _lock_for(applicant_id)
+    with lock:
+        manifest = _read_manifest(applicant_id)
+        requested = list(manifest["requested_documents"])
+        for document_type in document_types:
+            if document_type.value not in requested:
+                requested.append(document_type.value)
+        manifest["requested_documents"] = requested
+        _write_manifest(applicant_id, manifest)
+        return get_assessment(applicant_id, required)
 
 
 def _write_manifest(applicant_id: str, manifest: Mapping[str, Any]) -> None:
@@ -246,7 +345,7 @@ def _validate_upload(content: bytes, content_type: str) -> tuple[str, str]:
                         "The uploaded image dimensions exceed the supported limit."
                     )
                 image.verify()
-        except (UnidentifiedImageError, OSError, ValueError) as error:
+        except (UnidentifiedImageError, OSError, ValueError, SyntaxError) as error:
             raise KycUploadValidationError(
                 "The uploaded image is corrupted or unreadable."
             ) from error
@@ -1064,6 +1163,7 @@ def process_document(
     required = get_required_document_types()
     lock = _lock_for(applicant_id)
     with lock:
+        require_current_consent(applicant_id)
         manifest = _read_manifest(applicant_id)
         stored = _stored_document(applicant_id, document_type, manifest)
         if stored is None:
@@ -1156,11 +1256,35 @@ def get_assessment(
         if states_by_type[document_type].presence
         is KycDocumentPresence.NOT_PROVIDED
     ]
+    requested_documents = [
+        KycDocumentType(document_type)
+        for document_type in manifest["requested_documents"]
+    ]
+    outstanding_requests = [
+        document_type
+        for document_type in requested_documents
+        if states_by_type[document_type].presence is KycDocumentPresence.NOT_PROVIDED
+        or states_by_type[document_type].validation is not KycDocumentValidation.VALID
+        or (
+            states_by_type[document_type].extraction
+            and (
+                set(states_by_type[document_type].extraction.invalid_fields)
+                | set(states_by_type[document_type].extraction.missing_fields)
+                | set(states_by_type[document_type].extraction.low_confidence_fields)
+            ).intersection(states_by_type[document_type].extraction.required_fields)
+        )
+    ]
+    for document_type in outstanding_requests:
+        if (
+            states_by_type[document_type].presence is KycDocumentPresence.NOT_PROVIDED
+            and document_type not in upload_requests
+        ):
+            upload_requests.append(document_type)
     next_steps = [
         f"Please upload the {document_type.display_name} to continue to final approval."
         for document_type in upload_requests
     ]
-    for document_type in required:
+    for document_type in dict.fromkeys((*required, *outstanding_requests)):
         state = states_by_type[document_type]
         if (
             state.presence is KycDocumentPresence.PROVIDED
@@ -1205,16 +1329,18 @@ def get_assessment(
                 | set(states_by_type[document_type].extraction.low_confidence_fields)
             ).intersection(states_by_type[document_type].extraction.required_fields)
         )
-        for document_type in required
+        for document_type in dict.fromkeys((*required, *outstanding_requests))
     )
 
     return KycAssessment(
         applicant_id=applicant_id,
         documents=documents,
         required_documents=list(required),
+        requested_documents=outstanding_requests,
         upload_requests=upload_requests,
         next_steps=list(dict.fromkeys(next_steps)),
         ready_for_approval=ready,
+        consent=_current_consent(manifest),
     )
 
 
@@ -1229,6 +1355,7 @@ def save_document(
     extension, normalised_content_type = _validate_upload(content, content_type)
     lock = _lock_for(applicant_id)
     with lock:
+        require_current_consent(applicant_id)
         manifest = _read_manifest(applicant_id)
         applicant_dir = _applicant_upload_dir(applicant_id)
         try:
@@ -1299,6 +1426,7 @@ def review_document(
         raise ValueError("A document review must be VALID or INVALID.")
     lock = _lock_for(applicant_id)
     with lock:
+        require_current_consent(applicant_id)
         manifest = _read_manifest(applicant_id)
         stored = _stored_document(applicant_id, document_type, manifest)
         if stored is None:
@@ -1319,6 +1447,7 @@ def correct_extracted_fields(
     required = get_required_document_types()
     lock = _lock_for(applicant_id)
     with lock:
+        require_current_consent(applicant_id)
         manifest = _read_manifest(applicant_id)
         metadata = manifest["documents"].get(document_type.value)
         if not isinstance(metadata, dict) or not isinstance(metadata.get("extraction"), dict):

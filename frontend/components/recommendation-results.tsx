@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 
 import { Icon } from "@/components/landing";
 import { AdvisorChat } from "@/components/advisor-chat";
@@ -100,6 +101,8 @@ function BundleCard({
 export function RecommendationResults({
   recommendation,
   request,
+  applicantId,
+  initialQuote,
   onEdit,
   onRetry,
   retrying,
@@ -107,25 +110,42 @@ export function RecommendationResults({
 }: {
   recommendation: RecommendationResponse;
   request: RecommendationRequest;
+  applicantId: string;
+  initialQuote: QuoteResponse | null;
   onEdit: () => void;
   onRetry: () => void;
   retrying: boolean;
   onAdvisorUpdate: (
     recommendation: RecommendationResponse,
     request: RecommendationRequest,
-  ) => void;
+  ) => Promise<void>;
 }) {
   const recommendedId = useMemo(
     () => recommendation.bundles.find((bundle) => bundle.bundle_type === "recommended")?.bundle_id ?? recommendation.bundles[0]?.bundle_id,
     [recommendation.bundles],
   );
-  const [selectedBundleId, setSelectedBundleId] = useState<string | undefined>(recommendedId);
+  const initialQuotedBundleId = useMemo(() => {
+    if (!initialQuote) return undefined;
+    const quotedProductIds = initialQuote.line_items.map((line) => line.product_id).sort();
+    return recommendation.bundles.find((bundle) =>
+      bundle.products.map((product) => product.product_id).sort().join(",")
+        === quotedProductIds.join(","),
+    )?.bundle_id;
+  }, [initialQuote, recommendation.bundles]);
+  const initialBundleId = initialQuotedBundleId ?? recommendedId;
+  const [selectedBundleId, setSelectedBundleId] = useState<string | undefined>(initialBundleId);
   const [showComparison, setShowComparison] = useState(false);
   const [quantities, setQuantities] = useState<Record<string, number>>(() => {
-    const bundle = recommendation.bundles.find((item) => item.bundle_id === recommendedId);
-    return Object.fromEntries((bundle?.products ?? []).map((product) => [product.product_id, product.quantity]));
+    const bundle = recommendation.bundles.find((item) => item.bundle_id === initialBundleId);
+    const quoteQuantities = new Map(
+      (initialQuote?.line_items ?? []).map((line) => [line.product_id, line.quantity]),
+    );
+    return Object.fromEntries((bundle?.products ?? []).map((product) => [
+      product.product_id,
+      quoteQuantities.get(product.product_id) ?? product.quantity,
+    ]));
   });
-  const [quote, setQuote] = useState<QuoteResponse | null>(null);
+  const [quote, setQuote] = useState<QuoteResponse | null>(initialQuote);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
 
@@ -142,10 +162,11 @@ export function RecommendationResults({
     setQuoteError(null);
   };
 
-  const handleAdvisorUpdate = (
+  const handleAdvisorUpdate = async (
     nextRecommendation: RecommendationResponse,
     nextRequest: RecommendationRequest,
   ) => {
+    await onAdvisorUpdate(nextRecommendation, nextRequest);
     setSelectedBundleId(
       nextRecommendation.bundles.find((bundle) => bundle.bundle_type === "recommended")?.bundle_id
         ?? nextRecommendation.bundles[0]?.bundle_id,
@@ -156,7 +177,6 @@ export function RecommendationResults({
     ));
     setQuote(null);
     setQuoteError(null);
-    onAdvisorUpdate(nextRecommendation, nextRequest);
   };
 
   const changeQuantity = (productId: string, currentQuantity: number, change: number) => {
@@ -173,15 +193,14 @@ export function RecommendationResults({
     setQuoteLoading(true);
     setQuoteError(null);
     try {
-      setQuote(
-        await udyamOneApi.previewQuote({
-          business_profile: request.business_profile,
-          selected_products: selectedBundle.products.map((product) => ({
-            product_id: product.product_id,
-            quantity: quantities[product.product_id] ?? 1,
-          })),
-        }),
+      const response = await udyamOneApi.previewApplicantQuote(
+        applicantId,
+        selectedBundle.products.map((product) => ({
+          product_id: product.product_id,
+          quantity: quantities[product.product_id] ?? 1,
+        })),
       );
+      setQuote(response.quote);
     } catch (error) {
       setQuoteError((error as ApiError).message);
     } finally {
@@ -203,6 +222,7 @@ export function RecommendationResults({
           <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
             <button className="rounded-lg bg-[#10223e] px-5 py-3 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835]" onClick={onEdit} type="button">Edit business profile</button>
             <button className="rounded-lg border border-[#d8dee7] px-5 py-3 text-sm font-semibold text-[#34465f] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835]" disabled={retrying} onClick={onRetry} type="button">{retrying ? "Trying again…" : "Retry"}</button>
+            <Link className="rounded-lg border border-[#d8dee7] px-5 py-3 text-sm font-semibold text-[#34465f] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835]" href={`/kyc?applicant=${encodeURIComponent(applicantId)}`}>Open your KYC checklist</Link>
           </div>
         </div>
       </section>
@@ -220,6 +240,7 @@ export function RecommendationResults({
             <button aria-pressed={!showComparison} className={`rounded-lg px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835] ${!showComparison ? "bg-[#10223e] text-white" : "border border-[#d8dee7] bg-white text-[#40536b]"}`} onClick={() => setShowComparison(false)} type="button">Bundle options</button>
             <button aria-pressed={showComparison} className={`rounded-lg px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835] ${showComparison ? "bg-[#10223e] text-white" : "border border-[#d8dee7] bg-white text-[#40536b]"}`} onClick={() => setShowComparison(true)} type="button">Compare bundles</button>
             <button className="rounded-lg px-4 py-2 text-sm font-semibold text-[#c93835] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835]" onClick={onEdit} type="button">Edit business profile</button>
+            <Link className="rounded-lg border border-[#d8dee7] bg-white px-4 py-2 text-sm font-semibold text-[#31445e] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835]" href={`/kyc?applicant=${encodeURIComponent(applicantId)}`}>Continue to Smart KYC</Link>
           </div>
         </div>
       </section>
@@ -251,7 +272,7 @@ export function RecommendationResults({
             <p className="mt-3 text-sm leading-6 text-[#c5ceda]">Quote totals are calculated by the UdyamOne backend after it rechecks product eligibility and prerequisites.</p>
             <button className="mt-7 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#d9433f] px-5 text-sm font-semibold text-white transition hover:bg-[#ef514c] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60" disabled={quoteLoading} onClick={() => void requestQuote()} type="button">{quoteLoading ? "Getting your quote…" : "Get accurate quote"}<Icon className="size-4" name="arrow" /></button>
             {quoteError ? <div className="mt-5 rounded-lg bg-white/10 p-4 text-sm leading-6 text-[#ffd5d2]">{quoteError}<button className="ml-2 font-semibold text-white underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white" onClick={() => void requestQuote()} type="button">Retry</button></div> : null}
-            {quote ? <div className="mt-6 rounded-xl bg-white p-5 text-[#10223e]"><p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#c93835]">Authoritative backend quote</p><p className="mt-3 text-sm text-[#68768a]">Monthly range</p><p className="text-xl font-semibold">{formatInr(quote.total_monthly_min_inr)} – {formatInr(quote.total_monthly_max_inr)}</p><p className="mt-3 text-sm text-[#68768a]">One-time setup</p><p className="text-lg font-semibold">{formatInr(quote.total_one_time_setup_inr)}</p><div className="mt-5 grid gap-2 border-t border-[#e9edf1] pt-4">{quote.line_items.map((line) => <p className="text-xs text-[#647287]" key={line.product_id}>{line.product_name} · Qty {line.quantity} · {line.min_contract_months}-month minimum</p>)}</div><p className="mt-5 text-xs leading-5 text-[#8a6a2b]">Prototype pricing only. Final availability, taxes and commercial terms are confirmed during onboarding.</p></div> : null}
+            {quote ? <div className="mt-6 rounded-xl bg-white p-5 text-[#10223e]"><p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#c93835]">Authoritative backend quote</p><p className="mt-3 text-sm text-[#68768a]">Monthly range</p><p className="text-xl font-semibold">{formatInr(quote.total_monthly_min_inr)} – {formatInr(quote.total_monthly_max_inr)}</p><p className="mt-3 text-sm text-[#68768a]">One-time setup</p><p className="text-lg font-semibold">{formatInr(quote.total_one_time_setup_inr)}</p><div className="mt-5 grid gap-2 border-t border-[#e9edf1] pt-4">{quote.line_items.map((line) => <p className="text-xs text-[#647287]" key={line.product_id}>{line.product_name} · Qty {line.quantity} · {line.min_contract_months}-month minimum</p>)}</div><Link className="mt-5 inline-flex min-h-10 items-center rounded-lg border border-[#bdc7d3] px-3 text-sm font-semibold text-[#31445e] hover:bg-[#f7f9fb] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835]" href={`/kyc?applicant=${encodeURIComponent(applicantId)}`}>Continue to your KYC checklist</Link><p className="mt-5 text-xs leading-5 text-[#8a6a2b]">Prototype pricing only. Final availability, taxes and commercial terms are confirmed during onboarding.</p></div> : null}
           </div>
         </section> : null}
       </section>

@@ -121,12 +121,13 @@ export function SiteHeader() {
           <Link className="nav-link" href="/#business-services">Business services</Link>
         </nav>
         <div className="flex items-center gap-3 sm:gap-5">
-          <span
-            className="hidden cursor-default text-sm font-medium text-[#8a95a4] sm:inline"
-            title="Sign in is coming soon"
+          <Link
+            aria-label="Smart KYC prototype sign-in"
+            className="hidden text-sm font-medium text-[#31445e] hover:text-[#c93835] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835] sm:inline"
+            href="/kyc"
           >
-            Sign in <span className="text-xs">(coming soon)</span>
-          </span>
+            Smart KYC
+          </Link>
           <Link
             className="inline-flex items-center justify-center rounded-lg bg-[#c93835] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(201,56,53,0.2)] transition hover:bg-[#b12d2b] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#10223e] sm:px-5"
             href="/get-started"
@@ -158,6 +159,7 @@ export function SiteHeader() {
           <Link className="nav-link rounded-lg px-3 py-3 hover:bg-white" href="/#solutions" onClick={closeMobileMenu}>Solutions</Link>
           <Link className="nav-link rounded-lg px-3 py-3 hover:bg-white" href="/#how-it-works" onClick={closeMobileMenu}>How it works</Link>
           <Link className="nav-link rounded-lg px-3 py-3 hover:bg-white" href="/#business-services" onClick={closeMobileMenu}>Business services</Link>
+          <Link className="nav-link rounded-lg px-3 py-3 hover:bg-white" href="/kyc" onClick={closeMobileMenu}>Smart KYC prototype</Link>
         </div>
       </nav>
     </header>

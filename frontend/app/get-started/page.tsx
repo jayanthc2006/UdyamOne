@@ -1,13 +1,19 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
-import Link from "next/link";
+import { type FormEvent, useEffect, useState } from "react";
 
 import { Icon, SiteFooter, SiteHeader } from "@/components/landing";
 import { RecommendationResults } from "@/components/recommendation-results";
 import {
+  clearCurrentApplicantId,
+  getCurrentApplicantId,
+  saveCurrentApplicantId,
+} from "@/lib/applicant-session";
+import {
+  type ApplicantProfile,
   type BusinessSegment,
   type PrimaryRequirement,
+  type QuoteResponse,
   type RecommendationRequest,
   type RecommendationResponse,
   udyamOneApi,
@@ -89,15 +95,51 @@ function validate(values: FormValues): FormErrors {
 }
 
 function toRecommendationRequest(values: FormValues): RecommendationRequest {
+  const profile = toApplicantProfile(values);
   return {
+    business_profile: profile.business_profile,
+    business_segment: profile.business_segment,
+    primary_requirements: profile.primary_requirements,
+  };
+}
+
+function toApplicantProfile(values: FormValues): ApplicantProfile {
+  return {
+    business_name: values.businessName.trim(),
+    business_type: values.businessType as ApplicantProfile["business_type"],
+    city: values.city.trim(),
     business_profile: {
       city_tier: values.cityTier === "tier-1" ? 1 : 2,
       employee_count: Number(values.employeeCount),
       site_count: Number(values.siteCount),
+      // This is a self-report only. No GSTIN registry is checked in this prototype.
       gstin_verified: values.gstinStatus === "Verified",
     },
     business_segment: businessSegmentMap[values.businessType as (typeof businessTypes)[number]],
+    gstin_self_reported_status: values.gstinStatus as ApplicantProfile["gstin_self_reported_status"],
     primary_requirements: values.requirements.map((requirement) => requirementMap[requirement]),
+  };
+}
+
+const requirementLabelByValue: Record<PrimaryRequirement, Requirement> = {
+  connectivity: "Connectivity",
+  business_communication: "Business communication",
+  cloud_productivity: "Cloud and productivity",
+  security_iot: "Security and IoT",
+};
+
+function toFormValues(profile: ApplicantProfile): FormValues {
+  return {
+    businessName: profile.business_name,
+    businessType: profile.business_type,
+    city: profile.city,
+    cityTier: profile.business_profile.city_tier === 1 ? "tier-1" : "tier-2",
+    employeeCount: String(profile.business_profile.employee_count),
+    siteCount: String(profile.business_profile.site_count),
+    gstinStatus: profile.gstin_self_reported_status,
+    requirements: profile.primary_requirements.map(
+      (requirement) => requirementLabelByValue[requirement],
+    ),
   };
 }
 
@@ -133,8 +175,49 @@ export default function GetStartedPage() {
   const [touched, setTouched] = useState<Partial<Record<keyof FormValues, boolean>>>({});
   const [recommendation, setRecommendation] = useState<RecommendationResponse | null>(null);
   const [recommendationRequest, setRecommendationRequest] = useState<RecommendationRequest | null>(null);
+  const [applicantId, setApplicantId] = useState<string | null>(null);
+  const [latestQuote, setLatestQuote] = useState<QuoteResponse | null>(null);
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
   const [recommendationLoading, setRecommendationLoading] = useState(false);
+  const [restoringSession, setRestoringSession] = useState(true);
+
+  useEffect(() => {
+    const savedApplicantId = getCurrentApplicantId();
+    if (!savedApplicantId) {
+      const timer = window.setTimeout(() => setRestoringSession(false), 0);
+      return () => window.clearTimeout(timer);
+    }
+
+    let active = true;
+    udyamOneApi.getApplicant(savedApplicantId)
+      .then((savedApplicant) => {
+        if (!active) return;
+        setApplicantId(savedApplicant.applicant_id);
+        saveCurrentApplicantId(savedApplicant.applicant_id);
+        setLatestQuote(savedApplicant.latest_quote);
+        setValues(toFormValues(savedApplicant.profile));
+        setRecommendation(savedApplicant.recommendations);
+        setRecommendationRequest({
+          business_profile: savedApplicant.profile.business_profile,
+          business_segment: savedApplicant.profile.business_segment,
+          primary_requirements: savedApplicant.profile.primary_requirements,
+        });
+      })
+      .catch(() => {
+        if (!active) return;
+        clearCurrentApplicantId();
+        setRecommendationError(
+          "Your previous prototype profile could not be restored. Please submit it again.",
+        );
+      })
+      .finally(() => {
+        if (active) setRestoringSession(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const updateField = (field: EditableField, value: string) => {
     const nextValues = { ...values, [field]: value };
@@ -156,13 +239,24 @@ export default function GetStartedPage() {
     if (touched.requirements) setErrors(validate(nextValues));
   };
 
-  const requestRecommendations = async (request: RecommendationRequest) => {
+  const requestRecommendations = async () => {
     if (recommendationLoading) return;
     setRecommendationLoading(true);
     setRecommendationError(null);
     try {
-      setRecommendation(await udyamOneApi.getRecommendations(request));
-      setRecommendationRequest(request);
+      const profile = toApplicantProfile(values);
+      const journey = applicantId
+        ? await udyamOneApi.updateApplicantJourney(applicantId, profile)
+        : await udyamOneApi.beginApplicantJourney(profile);
+      setApplicantId(journey.applicant.applicant_id);
+      saveCurrentApplicantId(journey.applicant.applicant_id);
+      setLatestQuote(journey.applicant.latest_quote);
+      setRecommendation(journey.recommendations);
+      setRecommendationRequest({
+        business_profile: journey.applicant.profile.business_profile,
+        business_segment: journey.applicant.profile.business_segment,
+        primary_requirements: journey.applicant.profile.primary_requirements,
+      });
     } catch (error) {
       setRecommendationError(
         error instanceof Error ? error.message : "We could not create recommendations right now.",
@@ -188,29 +282,70 @@ export default function GetStartedPage() {
     });
 
     if (Object.keys(validationErrors).length || recommendationLoading) return;
-    void requestRecommendations(toRecommendationRequest(values));
+    void requestRecommendations();
   };
 
-  if (recommendation) {
+  if (recommendation && !applicantId) {
+    return (
+      <main className="min-h-screen bg-[#fcfcfb] text-[#10223e]">
+        <SiteHeader />
+        <section className="mx-auto max-w-3xl px-5 py-20 sm:px-8" role="alert">
+          <p className="text-sm text-[#8b2825]">
+            Your applicant identity is unavailable. Reopen your saved profile or submit it again.
+          </p>
+        </section>
+        <SiteFooter />
+      </main>
+    );
+  }
+
+  if (recommendation && applicantId) {
     return (
       <>
         <SiteHeader />
         <RecommendationResults
-          onAdvisorUpdate={(nextRecommendation, nextRequest) => {
-            setRecommendation(nextRecommendation);
-            setRecommendationRequest(nextRequest);
+          onAdvisorUpdate={async (_nextRecommendation, nextRequest) => {
+            if (!applicantId) {
+              throw new Error("Your applicant profile is not ready. Please retry.");
+            }
+            const profile: ApplicantProfile = {
+              ...toApplicantProfile(values),
+              primary_requirements: nextRequest.primary_requirements,
+            };
+            const journey = await udyamOneApi.updateApplicantJourney(applicantId, profile);
+            setRecommendation(journey.recommendations);
+            setRecommendationRequest({
+              business_profile: journey.applicant.profile.business_profile,
+              business_segment: journey.applicant.profile.business_segment,
+              primary_requirements: journey.applicant.profile.primary_requirements,
+            });
+            setLatestQuote(journey.applicant.latest_quote);
           }}
           onEdit={() => {
             setRecommendation(null);
             setRecommendationRequest(null);
           }}
-          onRetry={() => void requestRecommendations(recommendationRequest ?? toRecommendationRequest(values))}
+          onRetry={() => void requestRecommendations()}
+          applicantId={applicantId}
+          initialQuote={latestQuote}
           recommendation={recommendation}
           request={recommendationRequest ?? toRecommendationRequest(values)}
           retrying={recommendationLoading}
         />
         <SiteFooter />
       </>
+    );
+  }
+
+  if (restoringSession) {
+    return (
+      <main className="min-h-screen bg-[#fcfcfb] text-[#10223e]">
+        <SiteHeader />
+        <section className="mx-auto max-w-3xl px-5 py-20 sm:px-8" role="status">
+          <p className="text-sm text-[#526279]">Restoring your saved prototype journey…</p>
+        </section>
+        <SiteFooter />
+      </main>
     );
   }
 
@@ -242,7 +377,7 @@ export default function GetStartedPage() {
             <span className="rounded-full bg-[#fdebea] px-3 py-1.5 text-xs font-semibold text-[#b53431]">Step 1 of 1</span>
           </div>
 
-          {recommendationError ? <div aria-live="polite" className="mt-6 rounded-xl border border-[#f1d3d1] bg-[#fff5f4] p-4 text-sm leading-6 text-[#a22f2c]">{recommendationError}<button className="ml-2 font-semibold underline" disabled={recommendationLoading} onClick={() => void requestRecommendations(toRecommendationRequest(values))} type="button">Retry</button></div> : null}
+          {recommendationError ? <div aria-live="polite" className="mt-6 rounded-xl border border-[#f1d3d1] bg-[#fff5f4] p-4 text-sm leading-6 text-[#a22f2c]">{recommendationError}<button className="ml-2 font-semibold underline" disabled={recommendationLoading} onClick={() => void requestRecommendations()} type="button">Retry</button></div> : null}
 
           <div className="mt-7 grid gap-6 sm:grid-cols-2">
             <div className="sm:col-span-2">
@@ -318,7 +453,7 @@ export default function GetStartedPage() {
           </div>
 
           <div className="mt-8 flex flex-col gap-3 border-t border-[#edf0f3] pt-6 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs leading-5 text-[#7b8797]">Your details are used only to request this prototype recommendation preview. Nothing is persisted by this frontend.</p>
+            <p className="text-xs leading-5 text-[#7b8797]">Your profile is stored by this prototype backend to keep your recommendation, quote and KYC checklist connected. It is not sent for GSTIN registry verification.</p>
             <button className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[#d9433f] px-5 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(201,56,53,0.18)] transition hover:bg-[#c33532] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#10223e] disabled:cursor-not-allowed disabled:opacity-60" disabled={recommendationLoading} type="submit">
               {recommendationLoading ? "Finding solutions…" : "See my solutions"} <Icon className="size-4" name="arrow" />
             </button>
@@ -337,12 +472,7 @@ export default function GetStartedPage() {
               </li>
             ))}
           </ul>
-          <Link
-            className="mt-7 inline-flex min-h-10 items-center text-sm font-semibold text-white underline decoration-white/60 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-            href="/kyc"
-          >
-            View the K05 document checklist
-          </Link>
+          <p className="mt-7 text-sm leading-6 text-[#c0cad8]">After seeing your solutions or quote, you can continue to a KYC checklist created for your own applicant profile.</p>
         </aside>
       </section>
       <SiteFooter />

@@ -54,6 +54,33 @@ export type RecommendationResponse = {
   limitations: string[];
 };
 
+export type ApplicantBusinessType =
+  | "Micro retail"
+  | "Professional office"
+  | "Multi-site business"
+  | "Manufacturing";
+export type GstinSelfReportedStatus = "Verified" | "Not verified" | "Not registered";
+export type ApplicantProfile = {
+  business_name: string;
+  business_type: ApplicantBusinessType;
+  city: string;
+  business_profile: BusinessProfile;
+  business_segment: BusinessSegment;
+  gstin_self_reported_status: GstinSelfReportedStatus;
+  primary_requirements: PrimaryRequirement[];
+};
+export type ApplicantRecord = {
+  applicant_id: string;
+  created_at: string;
+  profile: ApplicantProfile;
+  recommendations: RecommendationResponse;
+  latest_quote: QuoteResponse | null;
+};
+export type ApplicantJourneyResponse = {
+  applicant: ApplicantRecord;
+  recommendations: RecommendationResponse;
+};
+
 export type AdvisorLanguage = "en" | "hi" | "te" | "ta" | "kn";
 export type AdvisorMessage = {
   role: "user" | "assistant";
@@ -100,6 +127,10 @@ export type QuoteResponse = {
   total_monthly_min_inr: number;
   total_monthly_max_inr: number;
   total_one_time_setup_inr: number;
+};
+export type ApplicantQuotePreviewResponse = {
+  applicant_id: string;
+  quote: QuoteResponse;
 };
 
 export type KycDocumentType =
@@ -157,9 +188,30 @@ export type KycAssessment = {
   applicant_id: string;
   documents: KycDocumentState[];
   required_documents: KycDocumentType[];
+  requested_documents: KycDocumentType[];
   upload_requests: KycDocumentType[];
   next_steps: string[];
   ready_for_approval: boolean;
+  consent: {
+    applicant_id: string;
+    consented: boolean;
+    consent_version: string;
+    timestamp: string;
+  } | null;
+};
+export type KycRole = "CUSTOMER" | "REVIEWER";
+export type KycSessionResponse = {
+  username: string;
+  role: KycRole;
+  access_token: string;
+  token_type: "bearer";
+  expires_at: number;
+  expires_in: number;
+};
+export type KycSessionIdentity = {
+  username: string;
+  role: KycRole;
+  expires_at: number;
 };
 export type KycFinalizationResponse = {
   finalized: true;
@@ -181,6 +233,7 @@ const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000"
 ).replace(/\/$/, "");
 const REQUEST_TIMEOUT_MS = 12_000;
+export const KYC_SESSION_KEY = "udyamone-kyc-session";
 
 function getErrorDetail(data: unknown): string {
   if (!data || typeof data !== "object" || !("detail" in data)) {
@@ -216,8 +269,14 @@ async function requestJson<TResponse>(
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    const headers = new Headers(init.headers);
+    if (path.startsWith("/api/v1/kyc/")) {
+      const token = window.sessionStorage.getItem(KYC_SESSION_KEY);
+      if (token) headers.set("Authorization", `Bearer ${token}`);
+    }
     const response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
+      headers,
       signal: controller.signal,
     });
     const data: unknown = await response.json().catch(() => null);
@@ -238,6 +297,32 @@ async function requestJson<TResponse>(
   }
 }
 
+async function requestBlob(path: string): Promise<Blob> {
+  const token = window.sessionStorage.getItem(KYC_SESSION_KEY);
+  if (!token) throw new ApiError("Sign in to view KYC documents.", 401);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const data: unknown = await response.json().catch(() => null);
+      throw new ApiError(getErrorDetail(data), response.status);
+    }
+    return await response.blob();
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ApiError("The document request took too long. Please try again.");
+    }
+    throw new ApiError("The document could not be retrieved. Check your connection and try again.");
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 function postJson<TResponse>(path: string, payload?: unknown): Promise<TResponse> {
   return requestJson(path, {
     method: "POST",
@@ -246,17 +331,64 @@ function postJson<TResponse>(path: string, payload?: unknown): Promise<TResponse
   });
 }
 
+function putJson<TResponse>(path: string, payload: unknown): Promise<TResponse> {
+  return requestJson(path, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 export const udyamOneApi = {
+  createKycSession: (username: string, password: string) =>
+    postJson<KycSessionResponse>("/api/v1/auth/session", { username, password }),
+  getKycSession: (token: string) =>
+    requestJson<KycSessionIdentity>("/api/v1/auth/session", {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  beginApplicantJourney: (profile: ApplicantProfile) =>
+    postJson<ApplicantJourneyResponse>("/api/v1/applicants", profile),
+  updateApplicantJourney: (applicantId: string, profile: ApplicantProfile) =>
+    putJson<ApplicantJourneyResponse>(
+      `/api/v1/applicants/${encodeURIComponent(applicantId)}`,
+      profile,
+    ),
+  getApplicant: (applicantId: string) =>
+    requestJson<ApplicantRecord>(`/api/v1/applicants/${encodeURIComponent(applicantId)}`, {
+      method: "GET",
+    }),
   getRecommendations: (request: RecommendationRequest) =>
     postJson<RecommendationResponse>("/api/v1/recommendations", request),
   advisorChat: (request: AdvisorChatRequest) =>
     postJson<AdvisorChatResponse>("/api/v1/advisor/chat", request),
   previewQuote: (request: QuoteRequest) =>
     postJson<QuoteResponse>("/api/v1/quotes/preview", request),
+  previewApplicantQuote: (
+    applicantId: string,
+    selected_products: Array<{ product_id: string; quantity: number }>,
+  ) =>
+    postJson<ApplicantQuotePreviewResponse>(
+      `/api/v1/applicants/${encodeURIComponent(applicantId)}/quotes/preview`,
+      { selected_products },
+    ),
   getKycAssessment: (applicantId: string) =>
     requestJson<KycAssessment>(`/api/v1/kyc/${encodeURIComponent(applicantId)}`, {
       method: "GET",
     }),
+  setKycConsent: (applicantId: string, consented: boolean) =>
+    postJson<KycAssessment>(
+      `/api/v1/kyc/${encodeURIComponent(applicantId)}/consent`,
+      { consented },
+    ),
+  requestKycAdditionalDocuments: (
+    applicantId: string,
+    documentTypes: KycDocumentType[],
+  ) =>
+    postJson<KycAssessment>(
+      `/api/v1/kyc/${encodeURIComponent(applicantId)}/additional-documents`,
+      { document_types: documentTypes },
+    ),
   uploadKycDocument: (
     applicantId: string,
     documentType: KycDocumentType,
@@ -313,11 +445,13 @@ export const udyamOneApi = {
         body: JSON.stringify(profile),
       },
     ),
-  getKycDocumentUrl: (
+  getKycDocument: (
     applicantId: string,
     documentType: KycDocumentType,
   ) =>
-    `${API_BASE_URL}/api/v1/kyc/${encodeURIComponent(applicantId)}/documents/${documentType}/file`,
+    requestBlob(
+      `/api/v1/kyc/${encodeURIComponent(applicantId)}/documents/${documentType}/file`,
+    ),
   finalizeKyc: (applicantId: string) =>
     postJson<KycFinalizationResponse>(
       `/api/v1/kyc/${encodeURIComponent(applicantId)}/finalize`,

@@ -37,7 +37,7 @@ export function AdvisorChat({
   onRecommendationUpdate: (
     recommendations: RecommendationResponse,
     request: RecommendationRequest,
-  ) => void;
+  ) => Promise<void>;
 }) {
   const [messages, setMessages] = useState<AdvisorMessage[]>([]);
   const [language, setLanguage] = useState<AdvisorLanguage>("en");
@@ -56,15 +56,15 @@ export function AdvisorChat({
         language,
       });
       const nextHistory = [...history.slice(-11), { role: "assistant" as const, content: response.reply }];
-      setMessages(nextHistory);
       if (response.recommendations_refreshed && response.recommendations) {
-        onRecommendationUpdate(response.recommendations, {
+        await onRecommendationUpdate(response.recommendations, {
           ...request,
           primary_requirements: [
             ...new Set([...request.primary_requirements, ...response.extracted_requirements]),
           ],
         });
       }
+      setMessages(nextHistory);
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : "The advisor could not respond.");
       setMessages(history.slice(-12));

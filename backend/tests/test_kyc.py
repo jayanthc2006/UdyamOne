@@ -5,12 +5,50 @@ from io import BytesIO
 from pathlib import Path
 
 from PIL import Image, ImageDraw
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.services import kyc_service
+from app.security.kyc_auth import (
+    create_session_token,
+    hash_password,
+    load_kyc_auth_configuration,
+)
 
 client = TestClient(app)
+reviewer_client = TestClient(app)
+_customer_password_hash = hash_password("SyntheticCustomerPassword1!")
+_reviewer_password_hash = hash_password("SyntheticReviewerPassword1!")
+
+
+@pytest.fixture(autouse=True)
+def configure_kyc_test_sessions(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("UDYAMONE_KYC_AUTH_SECRET", "synthetic-test-signing-secret-not-for-use")
+    monkeypatch.setenv(
+        "UDYAMONE_KYC_AUTH_USERS",
+        (
+            '[{"username":"test-customer","role":"CUSTOMER",'
+            f'"password_hash":"{_customer_password_hash}","applicant_ids":["K05","K01"]}},'
+            '{"username":"test-reviewer","role":"REVIEWER",'
+            f'"password_hash":"{_reviewer_password_hash}","applicant_ids":[]}}]'
+        ),
+    )
+    monkeypatch.setattr(kyc_service, "UPLOAD_ROOT", tmp_path)
+    configuration = load_kyc_auth_configuration()
+    customer_token, _ = create_session_token(
+        configuration.accounts["test-customer"], configuration.secret
+    )
+    reviewer_token, _ = create_session_token(
+        configuration.accounts["test-reviewer"], configuration.secret
+    )
+    client.headers["Authorization"] = f"Bearer {customer_token}"
+    reviewer_client.headers["Authorization"] = f"Bearer {reviewer_token}"
+    for applicant_id in ("K05", "K01"):
+        consent = client.post(
+            f"/api/v1/kyc/{applicant_id}/consent", json={"consented": True}
+        )
+        assert consent.status_code == 200
 
 GST_SAMPLE_TEXT = (
     "GOODS AND SERVICES TAX REGISTRATION\n"
@@ -63,7 +101,7 @@ def test_k05_missing_udyam_is_explicit_and_does_not_block_optional_onboarding(
     assert payload["ready_for_approval"] is True
     assert payload["upload_requests"] == []
 
-    finalization = client.post("/api/v1/kyc/K05/finalize")
+    finalization = reviewer_client.post("/api/v1/kyc/K05/finalize")
     assert finalization.status_code == 200
     assert finalization.json()["finalized"] is True
 
@@ -83,7 +121,7 @@ def test_required_missing_document_requests_upload_and_blocks_final_approval(
     assert payload["upload_requests"] == ["udyam_certificate"]
     assert "Udyam certificate" in payload["next_steps"][0]
 
-    finalization = client.post("/api/v1/kyc/K05/finalize")
+    finalization = reviewer_client.post("/api/v1/kyc/K05/finalize")
     assert finalization.status_code == 409
     assert "Udyam certificate" in finalization.json()["detail"]
 
@@ -111,10 +149,10 @@ def test_required_upload_stays_separate_from_validation_and_registry_states(
     assert uploaded["ready_for_approval"] is False
     assert uploaded["upload_requests"] == []
 
-    blocked = client.post("/api/v1/kyc/K05/finalize")
+    blocked = reviewer_client.post("/api/v1/kyc/K05/finalize")
     assert blocked.status_code == 409
 
-    review = client.post(
+    review = reviewer_client.post(
         "/api/v1/kyc/K05/documents/udyam_certificate/review",
         json={"validation": "VALID"},
     )
@@ -126,7 +164,7 @@ def test_required_upload_stays_separate_from_validation_and_registry_states(
     assert reviewed_udyam["registry_verification"] == "NOT_CHECKED"
     assert reviewed["ready_for_approval"] is True
 
-    finalization = client.post("/api/v1/kyc/K05/finalize")
+    finalization = reviewer_client.post("/api/v1/kyc/K05/finalize")
     assert finalization.status_code == 200
     assert finalization.json()["finalized"] is True
     stored_files = list((tmp_path / "K05").glob("*.png"))
@@ -145,7 +183,7 @@ def test_required_invalid_document_prevents_final_approval(
         headers={"content-type": "image/png"},
     )
 
-    review = client.post(
+    review = reviewer_client.post(
         "/api/v1/kyc/K05/documents/udyam_certificate/review",
         json={"validation": "INVALID"},
     )
@@ -153,14 +191,14 @@ def test_required_invalid_document_prevents_final_approval(
     assert review.status_code == 200
     assert _document(review.json(), "udyam_certificate")["validation"] == "INVALID"
     assert review.json()["ready_for_approval"] is False
-    assert client.post("/api/v1/kyc/K05/finalize").status_code == 409
+    assert reviewer_client.post("/api/v1/kyc/K05/finalize").status_code == 409
 
 
 def test_review_state_for_original_sample_documents_persists(
     monkeypatch, tmp_path
 ) -> None:
     monkeypatch.setattr(kyc_service, "UPLOAD_ROOT", tmp_path)
-    review = client.post(
+    review = reviewer_client.post(
         "/api/v1/kyc/K05/documents/gst_certificate/review",
         json={"validation": "VALID"},
     )
@@ -197,6 +235,18 @@ def test_upload_rejects_mismatched_and_corrupted_file_signatures(
     monkeypatch, tmp_path
 ) -> None:
     monkeypatch.setattr(kyc_service, "UPLOAD_ROOT", tmp_path)
+    checksum_corrupted = bytearray(_image_bytes())
+    chunk_offset = 8
+    while chunk_offset < len(checksum_corrupted):
+        chunk_size = int.from_bytes(
+            checksum_corrupted[chunk_offset : chunk_offset + 4], "big"
+        )
+        chunk_type = checksum_corrupted[chunk_offset + 4 : chunk_offset + 8]
+        if chunk_type == b"IDAT":
+            checksum_offset = chunk_offset + 8 + chunk_size
+            checksum_corrupted[checksum_offset] ^= 1
+            break
+        chunk_offset += chunk_size + 12
     invalid = client.put(
         "/api/v1/kyc/K05/documents/gst_certificate",
         content=b"not a png",
@@ -207,9 +257,15 @@ def test_upload_rejects_mismatched_and_corrupted_file_signatures(
         content=b"\x89PNG\r\n\x1a\ncorrupted",
         headers={"content-type": "image/png"},
     )
+    checksum_invalid = client.put(
+        "/api/v1/kyc/K05/documents/gst_certificate",
+        content=bytes(checksum_corrupted),
+        headers={"content-type": "image/png"},
+    )
 
     assert invalid.status_code == 422
     assert corrupted.status_code == 422
+    assert checksum_invalid.status_code == 422
     assert not list(tmp_path.rglob("*.png"))
 
 
@@ -322,13 +378,13 @@ def test_local_ocr_extracts_fields_and_supports_review_corrections_and_finalizat
     )
     assert corrected_legal_name["status"] == "MANUALLY_CORRECTED"
 
-    reviewed = client.post(
+    reviewed = reviewer_client.post(
         "/api/v1/kyc/K05/documents/gst_certificate/review",
         json={"validation": "VALID"},
     )
     assert reviewed.status_code == 200
     assert reviewed.json()["ready_for_approval"] is True
-    assert client.post("/api/v1/kyc/K05/finalize").status_code == 200
+    assert reviewer_client.post("/api/v1/kyc/K05/finalize").status_code == 200
 
 
 def test_authentic_sample_upload_preserves_source_and_uses_local_processing(
@@ -400,13 +456,13 @@ def test_ocr_failures_and_invalid_extracted_identifiers_are_reported(
     assert gst["processing_status"] == "SUCCEEDED"
     assert gstin["status"] == "INVALID_FORMAT"
     assert "gstin" in gst["extraction"]["invalid_fields"]
-    reviewed = client.post(
+    reviewed = reviewer_client.post(
         "/api/v1/kyc/K05/documents/gst_certificate/review",
         json={"validation": "VALID"},
     )
     assert reviewed.status_code == 200
     assert reviewed.json()["ready_for_approval"] is False
-    assert client.post("/api/v1/kyc/K05/finalize").status_code == 409
+    assert reviewer_client.post("/api/v1/kyc/K05/finalize").status_code == 409
 
     monkeypatch.setattr(
         kyc_service,
@@ -684,7 +740,7 @@ def test_ambiguous_udyam_number_blocks_until_manual_correction(
     assert "udyam_number" in udyam["extraction"]["low_confidence_fields"]
     assert processed.json()["ready_for_approval"] is False
 
-    reviewed = client.post(
+    reviewed = reviewer_client.post(
         "/api/v1/kyc/K05/documents/udyam_certificate/review",
         json={"validation": "VALID"},
     )
@@ -700,7 +756,7 @@ def test_ambiguous_udyam_number_blocks_until_manual_correction(
     corrected_document = _document(corrected.json(), "udyam_certificate")
     assert corrected.json()["ready_for_approval"] is True
     assert corrected_document["registry_verification"] == "NOT_CHECKED"
-    assert client.post("/api/v1/kyc/K05/finalize").status_code == 200
+    assert reviewer_client.post("/api/v1/kyc/K05/finalize").status_code == 200
 
 
 def test_signatory_extraction_collects_only_the_name() -> None:
@@ -735,19 +791,20 @@ def test_kyc_upload_endpoint_allows_cors_preflight() -> None:
         headers={
             "Origin": "http://localhost:3000",
             "Access-Control-Request-Method": "PUT",
-            "Access-Control-Request-Headers": "content-type",
+            "Access-Control-Request-Headers": "content-type,authorization",
         },
     )
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
     assert "PUT" in response.headers["access-control-allow-methods"]
+    assert "authorization" in response.headers["access-control-allow-headers"].lower()
     correction_preflight = client.options(
         "/api/v1/kyc/K05/documents/gst_certificate/corrections",
         headers={
             "Origin": "http://localhost:3000",
             "Access-Control-Request-Method": "PATCH",
-            "Access-Control-Request-Headers": "content-type",
+            "Access-Control-Request-Headers": "content-type,authorization",
         },
     )
     assert correction_preflight.status_code == 200

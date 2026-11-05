@@ -14,6 +14,7 @@ __pycache__/
 /uploads/
 /backend/uploads/
 /backend/runtime_uploads/
+/backend/runtime_data/
 /data/uploads/
 /data/kyc_uploads/
 /data/runtime_uploads/
@@ -34,3 +35,6 @@ dist/
 Thumbs.db
 
 debug.log
+
+# Local development server logs
+uvicorn*.log

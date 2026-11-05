@@ -1,11 +1,13 @@
 """KYC document presence, review, and final-approval routes."""
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
 
 from app.models.kyc import (
+    KycAdditionalDocumentsRequest,
     KycAssessment,
     KycApplicantProfileRequest,
+    KycConsentRequest,
     KycDocumentCorrectionRequest,
     KycDocumentReviewRequest,
     KycDocumentType,
@@ -13,6 +15,7 @@ from app.models.kyc import (
     KycFinalizationResponse,
 )
 from app.services.kyc_service import (
+    KycConsentRequiredError,
     KycConfigurationError,
     KycOcrError,
     KycStateError,
@@ -22,9 +25,18 @@ from app.services.kyc_service import (
     get_assessment,
     get_document_file,
     process_document,
+    record_consent,
+    request_additional_documents,
     review_document,
     save_document,
     set_applicant_profile,
+    require_current_consent,
+)
+from app.security.kyc_auth import (
+    KycPrincipal,
+    get_current_kyc_principal,
+    require_applicant_access,
+    require_kyc_role,
 )
 
 router = APIRouter(prefix="/kyc", tags=["kyc"])
@@ -47,8 +59,12 @@ def _raise_for_configuration_error(error: KycConfigurationError) -> None:
 
 
 @router.get("/{applicant_id}", response_model=KycAssessment)
-def get_kyc_assessment(applicant_id: str) -> KycAssessment:
+def get_kyc_assessment(
+    applicant_id: str,
+    principal: KycPrincipal = Depends(get_current_kyc_principal),
+) -> KycAssessment:
     """Return document presence and review state, without checking registries."""
+    require_applicant_access(principal, applicant_id)
     try:
         return get_assessment(applicant_id)
     except KycConfigurationError as error:
@@ -70,8 +86,11 @@ async def upload_kyc_document(
     applicant_id: str,
     document_type: KycDocumentType,
     request: Request,
+    principal: KycPrincipal = Depends(get_current_kyc_principal),
 ) -> KycAssessment:
     """Validate and store a document locally; no external provider is used."""
+    require_kyc_role(principal, "CUSTOMER")
+    require_applicant_access(principal, applicant_id)
     content_type = request.headers.get("content-type", "").split(";", maxsplit=1)[0].lower()
     if content_type not in ALLOWED_UPLOAD_TYPES:
         raise HTTPException(
@@ -101,6 +120,11 @@ async def upload_kyc_document(
         )
     except KycConfigurationError as error:
         _raise_for_configuration_error(error)
+    except KycConsentRequiredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        ) from error
     except KycStateError as error:
         _raise_for_state_error(error)
     except KycUploadValidationError as error:
@@ -119,8 +143,10 @@ async def upload_kyc_document(
 def retrieve_kyc_document(
     applicant_id: str,
     document_type: KycDocumentType,
+    principal: KycPrincipal = Depends(get_current_kyc_principal),
 ) -> FileResponse:
     """Download only the selected applicant's locally stored document."""
+    require_applicant_access(principal, applicant_id)
     try:
         path, content_type = get_document_file(applicant_id, document_type)
     except KycStateError as error:
@@ -157,14 +183,22 @@ def retrieve_kyc_document(
 def process_kyc_document(
     applicant_id: str,
     document_type: KycDocumentType,
+    principal: KycPrincipal = Depends(get_current_kyc_principal),
 ) -> KycAssessment:
     """Run local OCR and document-specific extraction."""
+    require_kyc_role(principal, "CUSTOMER")
+    require_applicant_access(principal, applicant_id)
     try:
         return process_document(applicant_id, document_type)
     except KycConfigurationError as error:
         _raise_for_configuration_error(error)
     except KycStateError as error:
         _raise_for_state_error(error)
+    except KycConsentRequiredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        ) from error
     except KycOcrError as error:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -185,14 +219,22 @@ def correct_kyc_document_fields(
     applicant_id: str,
     document_type: KycDocumentType,
     request: KycDocumentCorrectionRequest,
+    principal: KycPrincipal = Depends(get_current_kyc_principal),
 ) -> KycAssessment:
     """Persist customer-entered corrections without claiming document verification."""
+    require_kyc_role(principal, "CUSTOMER")
+    require_applicant_access(principal, applicant_id)
     try:
         return correct_extracted_fields(applicant_id, document_type, request.fields)
     except KycConfigurationError as error:
         _raise_for_configuration_error(error)
     except KycStateError as error:
         _raise_for_state_error(error)
+    except KycConsentRequiredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        ) from error
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -207,9 +249,13 @@ def correct_kyc_document_fields(
 def update_kyc_profile(
     applicant_id: str,
     request: KycApplicantProfileRequest,
+    principal: KycPrincipal = Depends(get_current_kyc_principal),
 ) -> KycAssessment:
     """Save optional submitted business details for potential mismatch warnings."""
+    require_kyc_role(principal, "CUSTOMER")
+    require_applicant_access(principal, applicant_id)
     try:
+        require_current_consent(applicant_id)
         return set_applicant_profile(
             applicant_id,
             request.business_name,
@@ -219,6 +265,11 @@ def update_kyc_profile(
         _raise_for_configuration_error(error)
     except KycStateError as error:
         _raise_for_state_error(error)
+    except KycConsentRequiredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        ) from error
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -234,8 +285,11 @@ def review_kyc_document(
     applicant_id: str,
     document_type: KycDocumentType,
     request: KycDocumentReviewRequest,
+    principal: KycPrincipal = Depends(get_current_kyc_principal),
 ) -> KycAssessment:
     """Record an explicit manual document review; registry state remains untouched."""
+    require_kyc_role(principal, "REVIEWER")
+    require_applicant_access(principal, applicant_id)
     try:
         return review_document(
             applicant_id,
@@ -257,8 +311,13 @@ def review_kyc_document(
     "/{applicant_id}/finalize",
     response_model=KycFinalizationResponse,
 )
-def finalize_kyc(applicant_id: str) -> KycFinalizationResponse:
+def finalize_kyc(
+    applicant_id: str,
+    principal: KycPrincipal = Depends(get_current_kyc_principal),
+) -> KycFinalizationResponse:
     """Confirm readiness only after configured requirements and corrections pass."""
+    require_kyc_role(principal, "REVIEWER")
+    require_applicant_access(principal, applicant_id)
     try:
         assessment = finalize_applicant(applicant_id)
     except KycConfigurationError as error:
@@ -277,3 +336,50 @@ def finalize_kyc(applicant_id: str) -> KycFinalizationResponse:
         ),
         assessment=assessment,
     )
+
+
+@router.post("/{applicant_id}/consent", response_model=KycAssessment)
+def set_kyc_consent(
+    applicant_id: str,
+    request: KycConsentRequest,
+    principal: KycPrincipal = Depends(get_current_kyc_principal),
+) -> KycAssessment:
+    """Persist the customer's affirmative or negative consent decision."""
+    require_kyc_role(principal, "CUSTOMER")
+    require_applicant_access(principal, applicant_id)
+    try:
+        return record_consent(applicant_id, request.consented)
+    except KycConfigurationError as error:
+        _raise_for_configuration_error(error)
+    except KycStateError as error:
+        _raise_for_state_error(error)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error
+
+
+@router.post(
+    "/{applicant_id}/additional-documents",
+    response_model=KycAssessment,
+)
+def request_kyc_additional_documents(
+    applicant_id: str,
+    request: KycAdditionalDocumentsRequest,
+    principal: KycPrincipal = Depends(get_current_kyc_principal),
+) -> KycAssessment:
+    """Persist reviewer-requested document types for this applicant."""
+    require_kyc_role(principal, "REVIEWER")
+    require_applicant_access(principal, applicant_id)
+    try:
+        return request_additional_documents(applicant_id, request.document_types)
+    except KycConfigurationError as error:
+        _raise_for_configuration_error(error)
+    except KycStateError as error:
+        _raise_for_state_error(error)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error

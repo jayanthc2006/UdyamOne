@@ -1,9 +1,9 @@
 """KYC document workflow schemas for the Phase 3.1 prototype."""
 
 from enum import Enum
-from typing import Any, Literal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class KycDocumentType(str, Enum):
@@ -92,15 +92,47 @@ class KycDocumentState(BaseModel):
     extraction: KycExtraction | None = None
 
 
+class KycConsentState(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    applicant_id: str
+    consented: bool
+    consent_version: str
+    timestamp: str
+
+
 class KycAssessment(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     applicant_id: str
     documents: list[KycDocumentState]
     required_documents: list[KycDocumentType]
+    requested_documents: list[KycDocumentType] = Field(default_factory=list)
     upload_requests: list[KycDocumentType]
     next_steps: list[str]
     ready_for_approval: bool
+    consent: KycConsentState | None = None
+
+
+class KycConsentRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    consented: bool
+
+
+class KycAdditionalDocumentsRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    document_types: list[KycDocumentType] = Field(min_length=1, max_length=4)
+
+    @field_validator("document_types")
+    @classmethod
+    def document_types_must_be_unique(
+        cls, document_types: list[KycDocumentType]
+    ) -> list[KycDocumentType]:
+        if len(document_types) != len(set(document_types)):
+            raise ValueError("document_types must not contain duplicates.")
+        return document_types
 
 
 class KycDocumentReviewRequest(BaseModel):
