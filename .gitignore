@@ -10,6 +10,14 @@ __pycache__/
 !.env.example
 /backend/.env
 
+# Runtime-uploaded customer documents (synthetic samples under data/sample_kyc are retained)
+/uploads/
+/backend/uploads/
+/backend/runtime_uploads/
+/data/uploads/
+/data/kyc_uploads/
+/data/runtime_uploads/
+
 # Test, coverage, and generated output
 .pytest_cache/
 .coverage

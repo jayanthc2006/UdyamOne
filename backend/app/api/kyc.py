@@ -1,0 +1,279 @@
+"""KYC document presence, review, and final-approval routes."""
+
+from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.responses import FileResponse
+
+from app.models.kyc import (
+    KycAssessment,
+    KycApplicantProfileRequest,
+    KycDocumentCorrectionRequest,
+    KycDocumentReviewRequest,
+    KycDocumentType,
+    KycDocumentValidation,
+    KycFinalizationResponse,
+)
+from app.services.kyc_service import (
+    KycConfigurationError,
+    KycOcrError,
+    KycStateError,
+    KycUploadValidationError,
+    correct_extracted_fields,
+    finalize_applicant,
+    get_assessment,
+    get_document_file,
+    process_document,
+    review_document,
+    save_document,
+    set_applicant_profile,
+)
+
+router = APIRouter(prefix="/kyc", tags=["kyc"])
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+ALLOWED_UPLOAD_TYPES = {"application/pdf", "image/jpeg", "image/png"}
+
+
+def _raise_for_state_error(error: KycStateError) -> None:
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail=str(error),
+    ) from error
+
+
+def _raise_for_configuration_error(error: KycConfigurationError) -> None:
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=str(error),
+    ) from error
+
+
+@router.get("/{applicant_id}", response_model=KycAssessment)
+def get_kyc_assessment(applicant_id: str) -> KycAssessment:
+    """Return document presence and review state, without checking registries."""
+    try:
+        return get_assessment(applicant_id)
+    except KycConfigurationError as error:
+        _raise_for_configuration_error(error)
+    except KycStateError as error:
+        _raise_for_state_error(error)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error
+
+
+@router.put(
+    "/{applicant_id}/documents/{document_type}",
+    response_model=KycAssessment,
+)
+async def upload_kyc_document(
+    applicant_id: str,
+    document_type: KycDocumentType,
+    request: Request,
+) -> KycAssessment:
+    """Validate and store a document locally; no external provider is used."""
+    content_type = request.headers.get("content-type", "").split(";", maxsplit=1)[0].lower()
+    if content_type not in ALLOWED_UPLOAD_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Upload a PNG, JPEG, or PDF document.",
+        )
+    content_length = request.headers.get("content-length")
+    if content_length and content_length.isdigit() and int(content_length) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="The uploaded document exceeds the 10 MB limit.",
+        )
+    chunks = bytearray()
+    async for chunk in request.stream():
+        if len(chunks) + len(chunk) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="The uploaded document exceeds the 10 MB limit.",
+            )
+        chunks.extend(chunk)
+    try:
+        return save_document(
+            applicant_id,
+            document_type,
+            bytes(chunks),
+            content_type,
+        )
+    except KycConfigurationError as error:
+        _raise_for_configuration_error(error)
+    except KycStateError as error:
+        _raise_for_state_error(error)
+    except KycUploadValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error
+
+
+@router.get("/{applicant_id}/documents/{document_type}/file")
+def retrieve_kyc_document(
+    applicant_id: str,
+    document_type: KycDocumentType,
+) -> FileResponse:
+    """Download only the selected applicant's locally stored document."""
+    try:
+        path, content_type = get_document_file(applicant_id, document_type)
+    except KycStateError as error:
+        _raise_for_state_error(error)
+    except FileNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="The requested document is not available.",
+        ) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error
+    extension = path.suffix
+    return FileResponse(
+        path,
+        media_type=content_type,
+        filename=f"{document_type.value}{extension}",
+        content_disposition_type="inline",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox; default-src 'none'",
+            "Referrer-Policy": "no-referrer",
+        },
+    )
+
+
+@router.post(
+    "/{applicant_id}/documents/{document_type}/process",
+    response_model=KycAssessment,
+)
+def process_kyc_document(
+    applicant_id: str,
+    document_type: KycDocumentType,
+) -> KycAssessment:
+    """Run local OCR and document-specific extraction."""
+    try:
+        return process_document(applicant_id, document_type)
+    except KycConfigurationError as error:
+        _raise_for_configuration_error(error)
+    except KycStateError as error:
+        _raise_for_state_error(error)
+    except KycOcrError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(error),
+        ) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error
+
+
+@router.patch(
+    "/{applicant_id}/documents/{document_type}/corrections",
+    response_model=KycAssessment,
+)
+def correct_kyc_document_fields(
+    applicant_id: str,
+    document_type: KycDocumentType,
+    request: KycDocumentCorrectionRequest,
+) -> KycAssessment:
+    """Persist customer-entered corrections without claiming document verification."""
+    try:
+        return correct_extracted_fields(applicant_id, document_type, request.fields)
+    except KycConfigurationError as error:
+        _raise_for_configuration_error(error)
+    except KycStateError as error:
+        _raise_for_state_error(error)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error
+
+
+@router.put(
+    "/{applicant_id}/profile",
+    response_model=KycAssessment,
+)
+def update_kyc_profile(
+    applicant_id: str,
+    request: KycApplicantProfileRequest,
+) -> KycAssessment:
+    """Save optional submitted business details for potential mismatch warnings."""
+    try:
+        return set_applicant_profile(
+            applicant_id,
+            request.business_name,
+            request.business_address,
+        )
+    except KycConfigurationError as error:
+        _raise_for_configuration_error(error)
+    except KycStateError as error:
+        _raise_for_state_error(error)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error
+
+
+@router.post(
+    "/{applicant_id}/documents/{document_type}/review",
+    response_model=KycAssessment,
+)
+def review_kyc_document(
+    applicant_id: str,
+    document_type: KycDocumentType,
+    request: KycDocumentReviewRequest,
+) -> KycAssessment:
+    """Record an explicit manual document review; registry state remains untouched."""
+    try:
+        return review_document(
+            applicant_id,
+            document_type,
+            KycDocumentValidation(request.validation),
+        )
+    except KycConfigurationError as error:
+        _raise_for_configuration_error(error)
+    except KycStateError as error:
+        _raise_for_state_error(error)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error
+
+
+@router.post(
+    "/{applicant_id}/finalize",
+    response_model=KycFinalizationResponse,
+)
+def finalize_kyc(applicant_id: str) -> KycFinalizationResponse:
+    """Confirm readiness only after configured requirements and corrections pass."""
+    try:
+        assessment = finalize_applicant(applicant_id)
+    except KycConfigurationError as error:
+        _raise_for_configuration_error(error)
+    except KycStateError as error:
+        _raise_for_state_error(error)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        ) from error
+    return KycFinalizationResponse(
+        message=(
+            "Required document checks are complete. The prototype assessment is "
+            "ready for an authorized human decision; this is not production approval."
+        ),
+        assessment=assessment,
+    )

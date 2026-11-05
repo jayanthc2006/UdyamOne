@@ -128,7 +128,7 @@ export function SiteHeader() {
             Sign in <span className="text-xs">(coming soon)</span>
           </span>
           <Link
-            className="inline-flex items-center justify-center rounded-lg bg-[#d9433f] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(201,56,53,0.2)] transition hover:bg-[#c33532] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#10223e] sm:px-5"
+            className="inline-flex items-center justify-center rounded-lg bg-[#c93835] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(201,56,53,0.2)] transition hover:bg-[#b12d2b] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#10223e] sm:px-5"
             href="/get-started"
           >
             Get started

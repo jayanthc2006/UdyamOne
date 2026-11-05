@@ -102,6 +102,71 @@ export type QuoteResponse = {
   total_one_time_setup_inr: number;
 };
 
+export type KycDocumentType =
+  | "gst_certificate"
+  | "udyam_certificate"
+  | "signatory_id"
+  | "address_proof";
+export type KycProcessingStatus =
+  | "NOT_STARTED"
+  | "PROCESSING"
+  | "SUCCEEDED"
+  | "UNREADABLE"
+  | "FAILED";
+export type KycFieldStatus =
+  | "EXTRACTED"
+  | "MISSING"
+  | "INVALID_FORMAT"
+  | "LOW_CONFIDENCE"
+  | "MANUALLY_CORRECTED";
+export type KycExtractedField = {
+  name: string;
+  label: string;
+  value: string | null;
+  confidence: number | null;
+  status: KycFieldStatus;
+  flags: string[];
+};
+export type KycExtraction = {
+  processing_status: KycProcessingStatus;
+  detected_document_type: KycDocumentType | null;
+  classification_matches_category: boolean | null;
+  fields: KycExtractedField[];
+  required_fields: string[];
+  missing_fields: string[];
+  invalid_fields: string[];
+  low_confidence_fields: string[];
+  mismatch_warnings: string[];
+  confidence_available: boolean;
+  error_code: string | null;
+};
+export type KycDocumentState = {
+  document_type: KycDocumentType;
+  display_name: string;
+  presence: "NOT_PROVIDED" | "PROVIDED";
+  validation: "NOT_REVIEWED" | "VALID" | "INVALID";
+  registry_verification: "NOT_CHECKED";
+  upload_status: "NOT_UPLOADED" | "UPLOADED";
+  processing_status: KycProcessingStatus;
+  original_filename: string | null;
+  file_size_bytes: number | null;
+  content_type: string | null;
+  extraction: KycExtraction | null;
+};
+export type KycAssessment = {
+  applicant_id: string;
+  documents: KycDocumentState[];
+  required_documents: KycDocumentType[];
+  upload_requests: KycDocumentType[];
+  next_steps: string[];
+  ready_for_approval: boolean;
+};
+export type KycFinalizationResponse = {
+  finalized: true;
+  message: string;
+  assessment: KycAssessment | null;
+};
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -142,18 +207,17 @@ function getErrorDetail(data: unknown): string {
   return messages.join(" ") || "The service could not process this request.";
 }
 
-async function postJson<TResponse>(
+async function requestJson<TResponse>(
   path: string,
-  payload: unknown,
+  init: RequestInit,
+  timeoutMs = REQUEST_TIMEOUT_MS,
 ): Promise<TResponse> {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      ...init,
       signal: controller.signal,
     });
     const data: unknown = await response.json().catch(() => null);
@@ -174,6 +238,14 @@ async function postJson<TResponse>(
   }
 }
 
+function postJson<TResponse>(path: string, payload?: unknown): Promise<TResponse> {
+  return requestJson(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
+  });
+}
+
 export const udyamOneApi = {
   getRecommendations: (request: RecommendationRequest) =>
     postJson<RecommendationResponse>("/api/v1/recommendations", request),
@@ -181,4 +253,73 @@ export const udyamOneApi = {
     postJson<AdvisorChatResponse>("/api/v1/advisor/chat", request),
   previewQuote: (request: QuoteRequest) =>
     postJson<QuoteResponse>("/api/v1/quotes/preview", request),
+  getKycAssessment: (applicantId: string) =>
+    requestJson<KycAssessment>(`/api/v1/kyc/${encodeURIComponent(applicantId)}`, {
+      method: "GET",
+    }),
+  uploadKycDocument: (
+    applicantId: string,
+    documentType: KycDocumentType,
+    file: File,
+  ) =>
+    requestJson<KycAssessment>(
+      `/api/v1/kyc/${encodeURIComponent(applicantId)}/documents/${documentType}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      },
+    ),
+  reviewKycDocument: (
+    applicantId: string,
+    documentType: KycDocumentType,
+    validation: "VALID" | "INVALID",
+  ) =>
+    postJson<KycAssessment>(
+      `/api/v1/kyc/${encodeURIComponent(applicantId)}/documents/${documentType}/review`,
+      { validation },
+    ),
+  processKycDocument: (
+    applicantId: string,
+    documentType: KycDocumentType,
+  ) =>
+    requestJson<KycAssessment>(
+      `/api/v1/kyc/${encodeURIComponent(applicantId)}/documents/${documentType}/process`,
+      { method: "POST" },
+      120_000,
+    ),
+  correctKycDocumentFields: (
+    applicantId: string,
+    documentType: KycDocumentType,
+    fields: Record<string, string | null>,
+  ) =>
+    requestJson<KycAssessment>(
+      `/api/v1/kyc/${encodeURIComponent(applicantId)}/documents/${documentType}/corrections`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fields }),
+      },
+    ),
+  setKycProfile: (
+    applicantId: string,
+    profile: { business_name: string | null; business_address: string | null },
+  ) =>
+    requestJson<KycAssessment>(
+      `/api/v1/kyc/${encodeURIComponent(applicantId)}/profile`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(profile),
+      },
+    ),
+  getKycDocumentUrl: (
+    applicantId: string,
+    documentType: KycDocumentType,
+  ) =>
+    `${API_BASE_URL}/api/v1/kyc/${encodeURIComponent(applicantId)}/documents/${documentType}/file`,
+  finalizeKyc: (applicantId: string) =>
+    postJson<KycFinalizationResponse>(
+      `/api/v1/kyc/${encodeURIComponent(applicantId)}/finalize`,
+    ),
 };

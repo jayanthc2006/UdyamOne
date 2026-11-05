@@ -1,6 +1,7 @@
 "use client";
 
 import { type FormEvent, useState } from "react";
+import Link from "next/link";
 
 import { Icon, SiteFooter, SiteHeader } from "@/components/landing";
 import { RecommendationResults } from "@/components/recommendation-results";
@@ -336,6 +337,12 @@ export default function GetStartedPage() {
               </li>
             ))}
           </ul>
+          <Link
+            className="mt-7 inline-flex min-h-10 items-center text-sm font-semibold text-white underline decoration-white/60 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            href="/kyc"
+          >
+            View the K05 document checklist
+          </Link>
         </aside>
       </section>
       <SiteFooter />

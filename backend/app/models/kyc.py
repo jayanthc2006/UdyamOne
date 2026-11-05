@@ -1,0 +1,130 @@
+"""KYC document workflow schemas for the Phase 3.1 prototype."""
+
+from enum import Enum
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class KycDocumentType(str, Enum):
+    GST_CERTIFICATE = "gst_certificate"
+    UDYAM_CERTIFICATE = "udyam_certificate"
+    SIGNATORY_ID = "signatory_id"
+    ADDRESS_PROOF = "address_proof"
+
+    @property
+    def display_name(self) -> str:
+        return {
+            KycDocumentType.GST_CERTIFICATE: "GST certificate",
+            KycDocumentType.UDYAM_CERTIFICATE: "Udyam certificate",
+            KycDocumentType.SIGNATORY_ID: "Signatory ID",
+            KycDocumentType.ADDRESS_PROOF: "Address proof",
+        }[self]
+
+
+class KycDocumentPresence(str, Enum):
+    NOT_PROVIDED = "NOT_PROVIDED"
+    PROVIDED = "PROVIDED"
+
+
+class KycDocumentValidation(str, Enum):
+    NOT_REVIEWED = "NOT_REVIEWED"
+    VALID = "VALID"
+    INVALID = "INVALID"
+
+
+class KycProcessingStatus(str, Enum):
+    NOT_STARTED = "NOT_STARTED"
+    PROCESSING = "PROCESSING"
+    SUCCEEDED = "SUCCEEDED"
+    UNREADABLE = "UNREADABLE"
+    FAILED = "FAILED"
+
+
+class KycFieldStatus(str, Enum):
+    EXTRACTED = "EXTRACTED"
+    MISSING = "MISSING"
+    INVALID_FORMAT = "INVALID_FORMAT"
+    LOW_CONFIDENCE = "LOW_CONFIDENCE"
+    MANUALLY_CORRECTED = "MANUALLY_CORRECTED"
+
+
+class KycExtractedField(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    label: str
+    value: str | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    status: KycFieldStatus
+    flags: list[str] = Field(default_factory=list)
+
+
+class KycExtraction(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    processing_status: KycProcessingStatus = KycProcessingStatus.NOT_STARTED
+    detected_document_type: KycDocumentType | None = None
+    classification_matches_category: bool | None = None
+    fields: list[KycExtractedField] = Field(default_factory=list)
+    required_fields: list[str] = Field(default_factory=list)
+    missing_fields: list[str] = Field(default_factory=list)
+    invalid_fields: list[str] = Field(default_factory=list)
+    low_confidence_fields: list[str] = Field(default_factory=list)
+    mismatch_warnings: list[str] = Field(default_factory=list)
+    confidence_available: bool = False
+    error_code: str | None = None
+
+
+class KycDocumentState(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    document_type: KycDocumentType
+    display_name: str
+    presence: KycDocumentPresence
+    validation: KycDocumentValidation
+    registry_verification: Literal["NOT_CHECKED"] = "NOT_CHECKED"
+    upload_status: Literal["NOT_UPLOADED", "UPLOADED"] = "NOT_UPLOADED"
+    processing_status: KycProcessingStatus = KycProcessingStatus.NOT_STARTED
+    original_filename: str | None = None
+    file_size_bytes: int | None = None
+    content_type: str | None = None
+    extraction: KycExtraction | None = None
+
+
+class KycAssessment(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    applicant_id: str
+    documents: list[KycDocumentState]
+    required_documents: list[KycDocumentType]
+    upload_requests: list[KycDocumentType]
+    next_steps: list[str]
+    ready_for_approval: bool
+
+
+class KycDocumentReviewRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    validation: Literal["VALID", "INVALID"]
+
+
+class KycDocumentCorrectionRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    fields: dict[str, str | None] = Field(min_length=1, max_length=20)
+
+
+class KycApplicantProfileRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    business_name: str | None = Field(default=None, max_length=200)
+    business_address: str | None = Field(default=None, max_length=500)
+
+
+class KycFinalizationResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    finalized: Literal[True] = True
+    message: str
+    assessment: KycAssessment | None = None
