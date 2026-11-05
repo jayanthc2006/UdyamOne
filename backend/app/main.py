@@ -1,12 +1,24 @@
 """FastAPI application entry point."""
 
 import os
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
 
 from app.api.health import router as health_router
 from app.api.router import api_router
+
+BACKEND_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+
+
+def load_backend_environment(env_file: Path | None = None) -> None:
+    """Load local backend settings without overriding process-level configuration."""
+    load_dotenv(env_file or BACKEND_ENV_FILE, override=False)
+
+
+load_backend_environment()
 
 DEFAULT_ALLOWED_ORIGINS = ("http://localhost:3000", "http://127.0.0.1:3000")
 

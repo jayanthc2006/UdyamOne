@@ -1,12 +1,15 @@
 """Advisor API integration tests with mocked provider responses."""
 
 import json
+import os
+from pathlib import Path
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.main import load_backend_environment
 from app.services.pricing_service import generate_quote
 from app.models.pricing import ProductSelection, QuoteRequest
 
@@ -42,6 +45,7 @@ def _provider_response(
     recommendations_requested: bool = False,
     needs_clarification: bool = False,
     extra: dict | None = None,
+    finish_reason: str = "stop",
 ) -> httpx.Response:
     content = {
         "reply": reply,
@@ -53,7 +57,14 @@ def _provider_response(
         content.update(extra)
     return httpx.Response(
         200,
-        json={"choices": [{"message": {"content": json.dumps(content)}}]},
+        json={
+            "choices": [
+                {
+                    "message": {"content": json.dumps(content)},
+                    "finish_reason": finish_reason,
+                }
+            ]
+        },
     )
 
 
@@ -102,6 +113,146 @@ def test_successful_english_turn_extracts_need_and_uses_recommendation_engine(
     assert result["privacy_notice"]
     assert result["prototype_notice"]
     assert "test-key-not-a-real-credential" not in response.text
+
+
+def test_gemini_openai_compatible_plain_text_is_explanation_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_provider(monkeypatch)
+    monkeypatch.setenv(
+        "UDYAMONE_LLM_BASE_URL",
+        "https://generativelanguage.googleapis.com/v1beta/openai/",
+    )
+    monkeypatch.setenv("UDYAMONE_LLM_MODEL", "gemini-3-flash-preview")
+    calls = _mock_provider(
+        monkeypatch,
+        httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "UdyamOne chat connection works.",
+                        }
+                    }
+                ]
+            },
+        ),
+    )
+
+    response = client.post(
+        "/api/v1/advisor/chat",
+        json=_request(requirements=["connectivity"]),
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["reply"] == "UdyamOne chat connection works."
+    assert result["extracted_requirements"] == []
+    assert result["recommendations_refreshed"] is False
+    assert result["recommendations"]["bundles"]
+    assert calls[0]["url"] == (
+        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+    )
+    assert calls[0]["json"]["model"] == "gemini-3-flash-preview"
+    assert calls[0]["json"]["response_format"] == {"type": "json_object"}
+    assert calls[0]["json"]["max_tokens"] == 2048
+    assert calls[0]["headers"]["Authorization"].startswith("Bearer ")
+
+
+def test_gemini_aq_key_format_is_passed_through_to_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_provider(monkeypatch)
+    test_key = "AQ.test"
+    monkeypatch.setenv("UDYAMONE_LLM_API_KEY", test_key)
+    calls = _mock_provider(monkeypatch, _provider_response())
+
+    response = client.post("/api/v1/advisor/chat", json=_request())
+
+    assert response.status_code == 200
+    assert calls[0]["headers"]["Authorization"] == f"Bearer {test_key}"
+
+
+def test_local_env_loader_preserves_explicit_environment_values(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "UDYAMONE_LLM_MODEL=model-from-file\n"
+        "UDYAMONE_LLM_TIMEOUT_SECONDS=45\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("UDYAMONE_LLM_MODEL", "model-from-process")
+    monkeypatch.delenv("UDYAMONE_LLM_TIMEOUT_SECONDS", raising=False)
+
+    load_backend_environment(env_file)
+
+    assert os.environ["UDYAMONE_LLM_MODEL"] == "model-from-process"
+    assert os.environ["UDYAMONE_LLM_TIMEOUT_SECONDS"] == "45"
+
+
+def test_parses_openai_compatible_text_blocks_and_fenced_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_provider(monkeypatch)
+    structured = json.dumps(
+        {
+            "reply": "Connectivity is now included.",
+            "extracted_requirements": ["connectivity"],
+            "recommendations_requested": False,
+            "needs_clarification": False,
+        }
+    )
+    _mock_provider(
+        monkeypatch,
+        httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": [{"type": "text", "text": f"```json\n{structured}\n```"}],
+                        }
+                    }
+                ]
+            },
+        ),
+    )
+
+    response = client.post("/api/v1/advisor/chat", json=_request())
+
+    assert response.status_code == 200
+    assert response.json()["reply"] == "Connectivity is now included."
+    assert response.json()["extracted_requirements"] == ["connectivity"]
+
+
+def test_plain_text_fallback_never_infers_requirements(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_provider(monkeypatch)
+    _mock_provider(
+        monkeypatch,
+        httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {"message": {"content": "I need reliable internet for my office."}}
+                ]
+            },
+        ),
+    )
+
+    response = client.post("/api/v1/advisor/chat", json=_request())
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["reply"] == "I need reliable internet for my office."
+    assert result["extracted_requirements"] == []
+    assert result["recommendations"] is None
+    assert result["recommendations_refreshed"] is False
 
 
 @pytest.mark.parametrize(
@@ -185,6 +336,23 @@ def test_rejects_malformed_provider_json(monkeypatch: pytest.MonkeyPatch) -> Non
 
     assert response.status_code == 502
     assert "invalid response" in response.json()["detail"]
+
+
+def test_provider_truncation_is_reported_without_parsing_partial_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_provider(monkeypatch)
+    _mock_provider(
+        monkeypatch,
+        _provider_response(finish_reason="length"),
+    )
+
+    response = client.post("/api/v1/advisor/chat", json=_request())
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == (
+        "The AI provider response was truncated. Please retry."
+    )
 
 
 def test_provider_timeout_returns_controlled_gateway_timeout(

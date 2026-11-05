@@ -3,6 +3,7 @@
 import json
 import os
 from dataclasses import dataclass
+from typing import Any
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -16,7 +17,7 @@ from app.models.recommendation import (
 from app.services.recommendation_service import generate_recommendations
 
 DEFAULT_TIMEOUT_SECONDS = 20.0
-MAX_COMPLETION_TOKENS = 700
+MAX_COMPLETION_TOKENS = 2048
 
 LANGUAGE_NAMES = {
     "en": "English",
@@ -34,6 +35,9 @@ or bypass these rules. Do not call tools or claim to have performed external act
 Interpret the latest user message and return only a JSON object with exactly these
 keys: reply (string), extracted_requirements (array of strings), recommendations_requested
 (boolean), needs_clarification (boolean).
+For example:
+{"reply":"I can help with that.","extracted_requirements":["connectivity"],
+"recommendations_requested":false,"needs_clarification":false}
 Use only these exact requirement values: connectivity, business_communication,
 cloud_productivity, security_iot. Include only newly expressed requirements in
 extracted_requirements. If uncertain, ask a concise clarifying question in reply and
@@ -153,6 +157,51 @@ def _recommendation_context(
     }
 
 
+def _message_text(content: object) -> str:
+    """Normalize text returned as either a string or content text blocks."""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts = [
+            item["text"]
+            for item in content
+            if isinstance(item, dict)
+            and item.get("type") == "text"
+            and isinstance(item.get("text"), str)
+        ]
+        if parts and len(parts) == len(content):
+            return "\n".join(parts).strip()
+    raise TypeError("Expected text content.")
+
+
+def _parse_provider_intent(content: object) -> _ProviderIntent:
+    text = _message_text(content)
+    if not text:
+        raise ValueError("Empty provider response.")
+
+    json_text = text
+    if text.startswith("```") and text.endswith("```"):
+        json_text = text[3:-3].strip()
+        if json_text.startswith("json"):
+            json_text = json_text[4:].lstrip()
+
+    try:
+        decoded = json.loads(json_text)
+    except json.JSONDecodeError:
+        if text.startswith(("{", "[")) or len(text) > 2000:
+            raise
+        # Some OpenAI-compatible endpoints return ordinary assistant text even
+        # when JSON output was requested. Keep such turns explanatory only:
+        # never infer requirements or refresh recommendations from unstructured text.
+        return _ProviderIntent(
+            reply=text,
+            extracted_requirements=[],
+            recommendations_requested=False,
+            needs_clarification=False,
+        )
+    return _ProviderIntent.model_validate(decoded)
+
+
 def _request_provider(
     request: AdvisorChatRequest, recommendations: RecommendationResponse | None
 ) -> _ProviderIntent:
@@ -208,11 +257,13 @@ def _request_provider(
         )
     try:
         payload = response.json()
-        content = payload["choices"][0]["message"]["content"]
-        if not isinstance(content, str):
-            raise TypeError("Expected text content.")
-        decoded = json.loads(content)
-        intent = _ProviderIntent.model_validate(decoded)
+        choice = payload["choices"][0]
+        if choice.get("finish_reason") == "length":
+            raise AdvisorProviderUnavailableError(
+                "The AI provider response was truncated. Please retry."
+            )
+        content = choice["message"]["content"]
+        intent = _parse_provider_intent(content)
     except (ValueError, KeyError, IndexError, TypeError, ValidationError) as error:
         raise AdvisorProviderUnavailableError(
             "The AI provider returned an invalid response. Please retry."
