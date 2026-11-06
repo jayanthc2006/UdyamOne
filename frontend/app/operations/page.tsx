@@ -122,7 +122,7 @@ export default function OperationsPage() {
     setBusy(true);
     setError(null);
     try {
-      setSelected(await udyamOneApi.getOrder(orderId));
+      setSelected(await udyamOneApi.getOperationsOrder(orderId));
       setNotice(null);
     } catch (openError) {
       setError(getErrorMessage(openError));

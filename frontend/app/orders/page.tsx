@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 
 import { SiteFooter, SiteHeader } from "@/components/landing";
 import { getCurrentApplicantId } from "@/lib/applicant-session";
@@ -31,6 +32,7 @@ export default function OrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmChecked, setConfirmChecked] = useState(false);
+  const [orderPlaced, setOrderPlaced] = useState(false);
 
   const signIn = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -132,6 +134,7 @@ export default function OrdersPage() {
       const order = await udyamOneApi.placeOrder(applicantId, true);
       setNotice(`Order ${order.order_id} placed. Operations will assign a partner next.`);
       setConfirmChecked(false);
+      setOrderPlaced(true);
       await loadOrders(applicantId);
       setSelected(order);
     } catch (placeError) {
@@ -243,6 +246,14 @@ export default function OrdersPage() {
             <>
               <section className="mt-6 rounded-xl border border-[#dce4ec] bg-white p-5" aria-labelledby="place-order-heading">
                 <h2 className="text-base font-semibold" id="place-order-heading">Place an order from your latest quote</h2>
+                {orderPlaced ? (
+                  <Link
+                    className="mt-2 inline-flex min-h-10 items-center rounded-lg bg-[#10223e] px-4 text-sm font-semibold text-white"
+                    href="/orders"
+                  >
+                    View My Orders
+                  </Link>
+                ) : null}
                 <p className="mt-1 text-sm leading-6 text-[#526279]">
                   This converts your latest persisted quote into a prototype order request. The quote
                   pricing is estimated and is snapshotted immutably with the order.

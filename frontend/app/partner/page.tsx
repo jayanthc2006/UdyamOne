@@ -110,7 +110,7 @@ export default function PartnerPage() {
     setBusy(true);
     setError(null);
     try {
-      setSelected(await udyamOneApi.getOrder(orderId));
+      setSelected(await udyamOneApi.getPartnerOrder(orderId));
       setNotice(null);
     } catch (openError) {
       setError(getErrorMessage(openError));

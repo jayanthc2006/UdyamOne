@@ -3,6 +3,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 
+import {
+  type KycSessionIdentity,
+  KYC_SESSION_KEY,
+  udyamOneApi,
+} from "@/lib/api";
+
 type IconName =
   | "arrow"
   | "check"
@@ -98,6 +104,71 @@ export function Wordmark({
 
 export function SiteHeader() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [principal, setPrincipal] = useState<KycSessionIdentity | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const token = window.sessionStorage.getItem(KYC_SESSION_KEY);
+    if (!token) {
+      const timer = window.setTimeout(() => {
+        if (active) setAuthReady(true);
+      }, 0);
+      return () => {
+        active = false;
+        window.clearTimeout(timer);
+      };
+    }
+    udyamOneApi
+      .getKycSession(token)
+      .then((session) => {
+        if (active) setPrincipal(session);
+      })
+      .catch(() => {
+        window.sessionStorage.removeItem(KYC_SESSION_KEY);
+      })
+      .finally(() => {
+        if (active) setAuthReady(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!authReady) return;
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === KYC_SESSION_KEY || event.key === null) {
+        const token = window.sessionStorage.getItem(KYC_SESSION_KEY);
+        setPrincipal(null);
+        if (token) {
+          udyamOneApi
+            .getKycSession(token)
+            .then((session) => setPrincipal(session))
+            .catch(() => window.sessionStorage.removeItem(KYC_SESSION_KEY));
+        }
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    const pollTimer = window.setInterval(() => {
+      const token = window.sessionStorage.getItem(KYC_SESSION_KEY);
+      if (!token && principal) {
+        setPrincipal(null);
+      } else if (token && !principal) {
+        udyamOneApi
+          .getKycSession(token)
+          .then((session) => setPrincipal(session))
+          .catch(() => {
+            window.sessionStorage.removeItem(KYC_SESSION_KEY);
+            setPrincipal(null);
+          });
+      }
+    }, 2000);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.clearInterval(pollTimer);
+    };
+  }, [authReady, principal]);
 
   useEffect(() => {
     if (!isMobileMenuOpen) return;
@@ -119,6 +190,15 @@ export function SiteHeader() {
           <Link className="nav-link" href="/#solutions">Solutions</Link>
           <Link className="nav-link" href="/#how-it-works">How it works</Link>
           <Link className="nav-link" href="/#business-services">Business services</Link>
+          {principal?.role === "CUSTOMER" ? (
+            <Link className="nav-link font-semibold text-[#10223e]" href="/orders">My Orders</Link>
+          ) : null}
+          {principal?.role === "OPERATIONS" ? (
+            <Link className="nav-link font-semibold text-[#10223e]" href="/operations">Operations Dashboard</Link>
+          ) : null}
+          {principal?.role === "PARTNER" ? (
+            <Link className="nav-link font-semibold text-[#10223e]" href="/partner">Partner Workspace</Link>
+          ) : null}
         </nav>
         <div className="flex items-center gap-3 sm:gap-5">
           <Link
@@ -160,6 +240,15 @@ export function SiteHeader() {
           <Link className="nav-link rounded-lg px-3 py-3 hover:bg-white" href="/#how-it-works" onClick={closeMobileMenu}>How it works</Link>
           <Link className="nav-link rounded-lg px-3 py-3 hover:bg-white" href="/#business-services" onClick={closeMobileMenu}>Business services</Link>
           <Link className="nav-link rounded-lg px-3 py-3 hover:bg-white" href="/kyc" onClick={closeMobileMenu}>Smart KYC prototype</Link>
+          {principal?.role === "CUSTOMER" ? (
+            <Link className="nav-link rounded-lg px-3 py-3 font-semibold text-[#10223e] hover:bg-white" href="/orders" onClick={closeMobileMenu}>My Orders</Link>
+          ) : null}
+          {principal?.role === "OPERATIONS" ? (
+            <Link className="nav-link rounded-lg px-3 py-3 font-semibold text-[#10223e] hover:bg-white" href="/operations" onClick={closeMobileMenu}>Operations Dashboard</Link>
+          ) : null}
+          {principal?.role === "PARTNER" ? (
+            <Link className="nav-link rounded-lg px-3 py-3 font-semibold text-[#10223e] hover:bg-white" href="/partner" onClick={closeMobileMenu}>Partner Workspace</Link>
+          ) : null}
         </div>
       </nav>
     </header>

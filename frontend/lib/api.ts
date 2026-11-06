@@ -582,6 +582,16 @@ export const udyamOneApi = {
     requestJson<OrderRecordData>(`/api/v1/orders/${encodeURIComponent(orderId)}`, {
       method: "GET",
     }),
+  getOperationsOrder: (orderId: string) =>
+    requestJson<OrderRecordData>(
+      `/api/v1/operations/orders/${encodeURIComponent(orderId)}`,
+      { method: "GET" },
+    ),
+  getPartnerOrder: (orderId: string) =>
+    requestJson<OrderRecordData>(
+      `/api/v1/partner/orders/${encodeURIComponent(orderId)}`,
+      { method: "GET" },
+    ),
   cancelOrder: (orderId: string) =>
     postJson<OrderRecordData>(`/api/v1/orders/${encodeURIComponent(orderId)}/cancel`),
   listOperationsOrders: (statusFilter?: string, search?: string) => {
