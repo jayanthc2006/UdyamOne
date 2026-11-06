@@ -12,7 +12,14 @@ router = APIRouter(prefix="/quotes", tags=["quotes"])
 def preview_quote(request: QuoteRequest) -> QuoteResponse:
     """Generate a quote only when the selected bundle is eligible."""
     try:
-        return generate_quote(request)
+        server_checked_request = request.model_copy(
+            update={
+                "business_profile": request.business_profile.model_copy(
+                    update={"gstin_verified": False}
+                )
+            }
+        )
+        return generate_quote(server_checked_request)
     except PricingValidationError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

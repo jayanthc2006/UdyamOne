@@ -34,7 +34,9 @@ def check_product_eligibility(
             f"of {product.min_sites}."
         )
     if product.requires_gstin and not profile.gstin_verified:
-        rejection_reasons.append("GSTIN verification is required.")
+        rejection_reasons.append(
+            "Verification against the synthetic GSTIN competition registry is required."
+        )
 
     return EligibilityResult(
         product_id=product.product_id,

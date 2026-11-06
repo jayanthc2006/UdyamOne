@@ -5,6 +5,11 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.models.verification import (
+    RegistryVerificationResult,
+    RegistryVerificationStatus,
+)
+
 
 class KycDocumentType(str, Enum):
     GST_CERTIFICATE = "gst_certificate"
@@ -95,7 +100,9 @@ class KycDocumentState(BaseModel):
     display_name: str
     presence: KycDocumentPresence
     validation: KycDocumentValidation
-    registry_verification: Literal["NOT_CHECKED"] = "NOT_CHECKED"
+    registry_verification: RegistryVerificationStatus | Literal["NOT_CHECKED"] = (
+        "NOT_CHECKED"
+    )
     document_source: Literal[
         "NOT_PROVIDED", "COMPETITION_SAMPLE", "CUSTOMER_UPLOAD"
     ] = "NOT_PROVIDED"
@@ -128,6 +135,11 @@ class KycAssessment(BaseModel):
     next_steps: list[str]
     ready_for_approval: bool
     consent: KycConsentState | None = None
+    gstin_verification: RegistryVerificationResult | None = None
+    udyam_verification: RegistryVerificationResult | None = None
+    required_registry_verifications: list[Literal["GSTIN", "UDYAM"]] = Field(
+        default_factory=list
+    )
 
 
 class KycConsentRequest(BaseModel):

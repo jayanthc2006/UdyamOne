@@ -85,6 +85,59 @@ It is not production authentication and does not provide account lifecycle,
 password reset, MFA, SSO, or centralized revocation. Do not deploy it as a
 production identity system.
 
+## Synthetic business registry verification
+
+The KYC workflow can compare corrected local-OCR fields with the supplied
+competition datasets:
+
+- `data/mock_registries/mock_gstin_registry.csv` (GSTIN, legal/trade names,
+  principal place of business, state, and record status).
+- `data/mock_registries/mock_udyam_registry.csv` (Udyam number, enterprise
+  name/type, state, and city).
+
+`POST /api/v1/kyc/{applicant_id}/verify-registries` runs both checks for the
+authenticated customer and persists only the status, reason, timestamp,
+dataset filename, comparison field names, and a one-way fingerprint of the
+inputs in the existing applicant SQLite database. Registry rows and submitted
+identifiers are not copied into the verification table. The decision uses the
+effective OCR/corrected certificate fields and the saved applicant business
+name/city; GSTIN normalization removes separators and applies uppercase before
+format validation, while names and city are compared after Unicode and
+punctuation normalization. Available GST address text is compared with the
+registered address. A non-active GST record is a mismatch.
+
+Each registry reports one of `VERIFIED`, `MISMATCH`, `UNAVAILABLE`, or
+`INCONCLUSIVE`. Conflicting duplicate identifiers and insufficient comparisons
+are inconclusive; identical duplicate rows collapse to one logical record.
+Missing or malformed registry files are reported as unavailable. KYC readiness
+requires a verified outcome only for applicable registries on new `APPL-`
+applicant journeys (a required or requested GST/Udyam document, an uploaded
+document, or a self-reported verified GSTIN). Existing competition sample KYC
+records retain their prior readiness rules. An unavailable, inconclusive, or
+mismatched result remains visible with a next step and does not convert the
+document review decision to INVALID.
+
+GSTIN-required catalogue products use a persisted, current GSTIN verification
+for applicant-scoped recommendations and quotes. The direct, unscoped
+recommendation, eligibility, quote, and advisor APIs cannot assert registry
+verification from their request body, so GSTIN-gated products remain ineligible
+there. Other catalogue rules and products are unchanged. A change to the saved
+profile or extracted/corrected identifier/name/address makes its earlier result
+stale; a new check is required before it can affect eligibility.
+
+These are synthetic competition datasets only: a match is not a government
+record lookup, legal validation, or official GST/Udyam verification. The
+consent version is updated when this comparison purpose is introduced, so an
+applicant must accept the current consent before running checks. Competition
+sample records, including K05, remain available without new registry readiness
+gates.
+
+Run the backend regression suite from the repository root with:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest backend\tests -q
+```
+
 ## Layout
 
 - `backend/app/api/` — HTTP routes

@@ -164,7 +164,7 @@ def test_consent_is_persisted_and_upload_and_ocr_are_blocked_after_decline() -> 
     consent_state = consent.json()["consent"]
     assert consent_state["applicant_id"] == "APPL-A"
     assert consent_state["consented"] is True
-    assert consent_state["consent_version"] == "kyc-consent-v1"
+    assert consent_state["consent_version"] == "kyc-consent-v2"
     assert consent_state["timestamp"]
     assert uploaded.status_code == 200
     assert withdrawn.status_code == 200
