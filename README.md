@@ -132,6 +132,52 @@ applicant must accept the current consent before running checks. Competition
 sample records, including K05, remain available without new registry readiness
 gates.
 
+## Order-to-activation operations (Phase 5)
+
+After a customer accepts their estimated quote they can convert it into a
+confirmed **prototype order request** with `POST /api/v1/orders` (explicit
+`confirmed: true` required). The order snapshots the quote immutably — line
+items, estimated monthly range, setup fees, quote reference and a
+"not a binding commercial offer" disclosure — and stores it as JSON with the
+order. Profile edits, catalogue changes and later quotes never modify an
+existing snapshot. Only one active order may exist per applicant; cancelled
+orders permit a new one. There is no payment processing, gateway, contract or
+commercial provisioning in this prototype.
+
+### Lifecycle
+
+`ORDER_PLACED → ASSIGNED → FULFILMENT_IN_PROGRESS → FULFILMENT_COMPLETED →
+ACTIVATION_PENDING → ACTIVATED`, with `ON_HOLD` and `CANCELLED` side states.
+Transitions are enforced by the backend state machine
+(`backend/app/models/order.py`) and every transition is validated against a
+role matrix (customers may cancel; partners advance fulfilment steps only on
+orders assigned to them; operations performs assignment, hold/resume and
+activation). Events are append-only in `order_events` with actor, role,
+timestamp, reason and detail.
+
+### Roles
+
+`OPERATIONS` and `PARTNER` join the existing `CUSTOMER`/`REVIEWER` roles in
+the same environment-configured prototype accounts (`UDYAMONE_KYC_AUTH_USERS`).
+Operations use `/operations` to search, filter, assign/reassign partners and
+drive lifecycle transitions. Partners use `/partner` to see only their own
+assigned orders and record fulfilment progress. Customers use `/orders` to
+place orders and track status, progress steps, assignment, timeline and the
+immutable pricing snapshot. Cross-applicant and cross-partner access is
+rejected by the backend; partner identity always comes from the signed
+session.
+
+### Storage
+
+Orders live in the existing applicant SQLite database as three new tables
+(`orders`, `order_events`, `order_assignments`) created by an idempotent
+`CREATE TABLE IF NOT EXISTS` migration on first use. Assignment history is
+preserved by marking superseded rows rather than deleting them.
+
+Activation is simulated: no network activation or telecom provisioning is
+performed. Registry checks remain synthetic competition datasets, not
+government GST/Udyam verification.
+
 Run the backend regression suite from the repository root with:
 
 ```powershell

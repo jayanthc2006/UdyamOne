@@ -233,7 +233,7 @@ export type KycAssessment = {
     timestamp: string;
   } | null;
 };
-export type KycRole = "CUSTOMER" | "REVIEWER";
+export type KycRole = "CUSTOMER" | "REVIEWER" | "OPERATIONS" | "PARTNER";
 export type KycSessionResponse = {
   username: string;
   role: KycRole;
@@ -251,6 +251,73 @@ export type KycFinalizationResponse = {
   finalized: true;
   message: string;
   assessment: KycAssessment | null;
+};
+
+export type OrderStatus =
+  | "ORDER_PLACED"
+  | "ASSIGNED"
+  | "FULFILMENT_IN_PROGRESS"
+  | "FULFILMENT_COMPLETED"
+  | "ACTIVATION_PENDING"
+  | "ACTIVATED"
+  | "ON_HOLD"
+  | "CANCELLED";
+
+export type OrderSnapshotData = {
+  snapshot_version: number;
+  quote_id: string;
+  line_items: QuoteLineItem[];
+  total_monthly_min_inr: number;
+  total_monthly_max_inr: number;
+  total_one_time_setup_inr: number;
+  quote_created_at: string;
+  disclosure: string;
+};
+
+export type OrderEventData = {
+  event_id: string;
+  order_id: string;
+  event_type: string;
+  from_status: string | null;
+  to_status: string;
+  actor_username: string;
+  actor_role: string;
+  reason: string | null;
+  detail: string | null;
+  created_at: string;
+};
+
+export type OrderAssignmentData = {
+  assignment_id: string;
+  order_id: string;
+  partner_username: string;
+  assigned_by_username: string;
+  assigned_at: string;
+  reason: string | null;
+  superseded_at: string | null;
+};
+
+export type OrderRecordData = {
+  order_id: string;
+  applicant_id: string;
+  status: OrderStatus;
+  snapshot: OrderSnapshotData;
+  created_at: string;
+  updated_at: string;
+  current_assignment: OrderAssignmentData | null;
+  events: OrderEventData[];
+};
+
+export type OrderSummaryData = {
+  order_id: string;
+  applicant_id: string;
+  status: OrderStatus;
+  created_at: string;
+  updated_at: string;
+  partner_username: string | null;
+  total_monthly_min_inr: number;
+  total_monthly_max_inr: number;
+  total_one_time_setup_inr: number;
 };
 
 export class ApiError extends Error {
@@ -304,7 +371,12 @@ async function requestJson<TResponse>(
 
   try {
     const headers = new Headers(init.headers);
-    if (path.startsWith("/api/v1/kyc/")) {
+    if (
+      path.startsWith("/api/v1/kyc/")
+      || path.startsWith("/api/v1/orders")
+      || path.startsWith("/api/v1/operations")
+      || path.startsWith("/api/v1/partner")
+    ) {
       const token = window.sessionStorage.getItem(KYC_SESSION_KEY);
       if (token) headers.set("Authorization", `Bearer ${token}`);
     }
@@ -496,4 +568,72 @@ export const udyamOneApi = {
     postJson<KycFinalizationResponse>(
       `/api/v1/kyc/${encodeURIComponent(applicantId)}/finalize`,
     ),
+  placeOrder: (applicantId: string, confirmed: boolean) =>
+    postJson<OrderRecordData>("/api/v1/orders", {
+      applicant_id: applicantId,
+      confirmed,
+    }),
+  getApplicantOrders: (applicantId: string) =>
+    requestJson<OrderSummaryData[]>(
+      `/api/v1/orders/applicant/${encodeURIComponent(applicantId)}`,
+      { method: "GET" },
+    ),
+  getOrder: (orderId: string) =>
+    requestJson<OrderRecordData>(`/api/v1/orders/${encodeURIComponent(orderId)}`, {
+      method: "GET",
+    }),
+  cancelOrder: (orderId: string) =>
+    postJson<OrderRecordData>(`/api/v1/orders/${encodeURIComponent(orderId)}/cancel`),
+  listOperationsOrders: (statusFilter?: string, search?: string) => {
+    const params = new URLSearchParams();
+    if (statusFilter) params.set("status", statusFilter);
+    if (search) params.set("search", search);
+    const query = params.toString();
+    return requestJson<OrderSummaryData[]>(
+      `/api/v1/operations/orders${query ? `?${query}` : ""}`,
+      { method: "GET" },
+    );
+  },
+  assignOrderPartner: (
+    orderId: string,
+    partnerUsername: string,
+    reason?: string,
+  ) =>
+    postJson<OrderRecordData>(
+      `/api/v1/operations/orders/${encodeURIComponent(orderId)}/assign`,
+      { partner_username: partnerUsername, ...(reason ? { reason } : {}) },
+    ),
+  transitionOperationsOrder: (
+    orderId: string,
+    toStatus: string,
+    reason?: string,
+    detail?: string,
+  ) =>
+    postJson<OrderRecordData>(
+      `/api/v1/operations/orders/${encodeURIComponent(orderId)}/transition`,
+      { to_status: toStatus, ...(reason ? { reason } : {}), ...(detail ? { detail } : {}) },
+    ),
+  listPartnerOrders: () =>
+    requestJson<OrderSummaryData[]>("/api/v1/partner/orders", { method: "GET" }),
+  transitionPartnerOrder: (
+    orderId: string,
+    toStatus: string,
+    reason?: string,
+    detail?: string,
+  ) =>
+    postJson<OrderRecordData>(
+      `/api/v1/partner/orders/${encodeURIComponent(orderId)}/transition`,
+      { to_status: toStatus, ...(reason ? { reason } : {}), ...(detail ? { detail } : {}) },
+    ),
+};
+
+export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  ORDER_PLACED: "Order placed",
+  ASSIGNED: "Partner assigned",
+  FULFILMENT_IN_PROGRESS: "Fulfilment in progress",
+  FULFILMENT_COMPLETED: "Fulfilment completed",
+  ACTIVATION_PENDING: "Activation pending",
+  ACTIVATED: "Activated",
+  ON_HOLD: "On hold",
+  CANCELLED: "Cancelled",
 };

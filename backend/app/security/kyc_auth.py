@@ -24,7 +24,7 @@ _MAX_PASSWORD_HASH_ITERATIONS = 2_000_000
 _USERNAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.@-]{0,99}")
 _APPLICANT_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
 
-KycRole = Literal["CUSTOMER", "REVIEWER"]
+KycRole = Literal["CUSTOMER", "REVIEWER", "OPERATIONS", "PARTNER"]
 
 
 class KycAuthConfigurationError(ValueError):
@@ -138,7 +138,7 @@ def load_kyc_auth_configuration() -> KycAuthConfiguration:
             not isinstance(username, str)
             or not _USERNAME_PATTERN.fullmatch(username)
             or not isinstance(role, str)
-            or role not in {"CUSTOMER", "REVIEWER"}
+            or role not in {"CUSTOMER", "REVIEWER", "OPERATIONS", "PARTNER"}
             or not isinstance(password_hash, str)
             or not isinstance(applicant_ids, list)
             or any(
@@ -160,10 +160,10 @@ def load_kyc_auth_configuration() -> KycAuthConfiguration:
             applicant_ids=frozenset(applicant_ids),
         )
     if not any(account.role == "CUSTOMER" for account in accounts.values()) or not any(
-        account.role == "REVIEWER" for account in accounts.values()
+        account.role in {"REVIEWER", "OPERATIONS", "PARTNER"} for account in accounts.values()
     ):
         raise KycAuthConfigurationError(
-            "KYC authentication requires configured customer and reviewer accounts."
+            "KYC authentication requires at least one customer and one non-customer account."
         )
     return KycAuthConfiguration(secret=secret.encode("utf-8"), accounts=accounts)
 

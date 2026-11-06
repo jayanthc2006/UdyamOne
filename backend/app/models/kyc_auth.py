@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-KycRole = Literal["CUSTOMER", "REVIEWER"]
+KycRole = Literal["CUSTOMER", "REVIEWER", "OPERATIONS", "PARTNER"]
 
 
 class KycLoginRequest(BaseModel):
