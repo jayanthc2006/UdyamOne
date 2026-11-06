@@ -1,6 +1,7 @@
 """KYC document-presence, validation, and approval-gate tests."""
 
 import hashlib
+from datetime import date
 from io import BytesIO
 from pathlib import Path
 
@@ -94,9 +95,11 @@ def test_k05_missing_udyam_is_explicit_and_does_not_block_optional_onboarding(
     assert response.status_code == 200
     payload = response.json()
     udyam = _document(payload, "udyam_certificate")
+    gst = _document(payload, "gst_certificate")
     assert udyam["presence"] == "NOT_PROVIDED"
     assert udyam["validation"] == "NOT_REVIEWED"
     assert udyam["registry_verification"] == "NOT_CHECKED"
+    assert gst["document_source"] == "COMPETITION_SAMPLE"
     assert payload["required_documents"] == []
     assert payload["ready_for_approval"] is True
     assert payload["upload_requests"] == []
@@ -377,6 +380,17 @@ def test_local_ocr_extracts_fields_and_supports_review_corrections_and_finalizat
         if field["name"] == "legal_name"
     )
     assert corrected_legal_name["status"] == "MANUALLY_CORRECTED"
+    assert corrected_legal_name["original_value"] == "SAMPLE TRADERS"
+    assert corrected_legal_name["corrected_value"] == "Corrected Sample Name"
+    assert corrected_legal_name["correction_applied"] is True
+    refreshed = client.get("/api/v1/kyc/K05")
+    persisted_legal_name = next(
+        field
+        for field in _document(refreshed.json(), "gst_certificate")["extraction"]["fields"]
+        if field["name"] == "legal_name"
+    )
+    assert persisted_legal_name["original_value"] == "SAMPLE TRADERS"
+    assert persisted_legal_name["value"] == "Corrected Sample Name"
 
     reviewed = reviewer_client.post(
         "/api/v1/kyc/K05/documents/gst_certificate/review",
@@ -679,12 +693,19 @@ def test_actual_gst_sample_is_cropped_for_local_number_row_ocr(
     def fake_ocr(paths: list[Path]) -> list[dict]:
         nonlocal calls
         calls += 1
-        text = (
-            "SPECIMEN GSTIN HACKATHON OCR TESTING"
-            if calls == 1
-            else "GSTIN: 29ABCDE1234F1Z5"
-        )
-        return [{"status": "SUCCEEDED", "text": text, "confidence": 0.9}]
+        if calls == 1:
+            texts = ["SPECIMEN GSTIN HACKATHON OCR TESTING"]
+        else:
+            texts = [
+                "GSTIN: 29ABCDE1234F1Z5"
+                if path.name == "registration-row.png"
+                else "SAMPLE TRADERS"
+                for path in paths
+            ]
+        return [
+            {"status": "SUCCEEDED", "text": text, "confidence": 0.9}
+            for text in texts
+        ]
 
     monkeypatch.setattr(kyc_service, "_run_windows_ocr", fake_ocr)
     extraction = kyc_service._process_document_path(
@@ -695,7 +716,7 @@ def test_actual_gst_sample_is_cropped_for_local_number_row_ocr(
     )
 
     gstin = next(field for field in extraction.fields if field.name == "gstin")
-    assert calls == 2
+    assert calls == 3
     assert extraction.processing_status.value == "SUCCEEDED"
     assert gstin.status.value == "EXTRACTED"
 
@@ -809,3 +830,233 @@ def test_kyc_upload_endpoint_allows_cors_preflight() -> None:
     )
     assert correction_preflight.status_code == 200
     assert "PATCH" in correction_preflight.headers["access-control-allow-methods"]
+
+
+@pytest.mark.parametrize(
+    ("document_date", "expected"),
+    [
+        ("2026-04-16", "VALID"),
+        ("2026-04-15", "EXPIRED"),
+        ("not a date", "INCONCLUSIVE"),
+        (None, "INCONCLUSIVE"),
+        ("2026-07-16", "INCONCLUSIVE"),
+    ],
+)
+def test_address_proof_recency_uses_fixed_reference_and_90_day_boundary(
+    document_date: str | None, expected: str
+) -> None:
+    assert kyc_service._assess_address_proof_recency(
+        document_date, date(2026, 7, 15)
+    ).value == expected
+
+
+def test_gst_name_row_extraction_handles_all_supplied_certificate_layouts(
+    monkeypatch,
+) -> None:
+    sample_paths = sorted(
+        kyc_service.SAMPLE_KYC_ROOT.glob("K*/K*_gst_certificate.png")
+    )
+    assert len(sample_paths) == 12
+
+    def fake_ocr(paths: list[Path]) -> list[dict]:
+        responses = []
+        for path in paths:
+            if path.name == "registration-row.png":
+                text = "GSTIN: 29ABCDE1234F1Z5"
+            elif path.name.startswith("legal_name"):
+                text = "Legal Name of Business: SAMPLE TRADERS"
+            elif path.name.startswith("trade_name"):
+                text = "Trade Name: SAMPLE TRADING"
+            else:
+                text = (
+                    "SPECIMEN GST CERTIFICATE GSTIN Legal Name of Business "
+                    "Trade Name Principal Place of Business"
+                )
+            responses.append(
+                {"status": "SUCCEEDED", "text": text, "confidence": None}
+            )
+        return responses
+
+    monkeypatch.setattr(kyc_service, "_run_windows_ocr", fake_ocr)
+    extracted_names = []
+    for path in sample_paths:
+        extraction = kyc_service._process_document_path(
+            kyc_service.KycDocumentType.GST_CERTIFICATE,
+            path,
+            {"content_type": "image/png"},
+            {},
+        )
+        fields = {field.name: field.value for field in extraction.fields}
+        extracted_names.append((fields["legal_name"], fields["trade_name"]))
+
+    assert extracted_names == [
+        ("SAMPLE TRADERS", "SAMPLE TRADING")
+    ] * 12
+
+
+def test_gst_unreadable_name_row_is_not_inferred(monkeypatch) -> None:
+    sample_path = next(
+        kyc_service.SAMPLE_KYC_ROOT.glob("K*/K*_gst_certificate.png")
+    )
+
+    def unreadable_name_ocr(paths: list[Path]) -> list[dict]:
+        responses = []
+        for path in paths:
+            if path.name == "registration-row.png":
+                text = "GSTIN: 29ABCDE1234F1Z5"
+            elif path.name.startswith(("legal_name", "trade_name")):
+                text = ""
+            else:
+                text = "SPECIMEN GST CERTIFICATE GSTIN"
+            responses.append(
+                {"status": "SUCCEEDED", "text": text, "confidence": None}
+            )
+        return responses
+
+    monkeypatch.setattr(kyc_service, "_run_windows_ocr", unreadable_name_ocr)
+    extraction = kyc_service._process_document_path(
+        kyc_service.KycDocumentType.GST_CERTIFICATE,
+        sample_path,
+        {"content_type": "image/png"},
+        {},
+    )
+    names = {
+        field.name: field.value
+        for field in extraction.fields
+        if field.name in {"legal_name", "trade_name"}
+    }
+
+    assert names == {"legal_name": None, "trade_name": None}
+
+
+def test_gst_ambiguous_rotated_name_rows_remain_missing(monkeypatch) -> None:
+    sample_path = next(
+        kyc_service.SAMPLE_KYC_ROOT.glob("K*/K*_gst_certificate.png")
+    )
+
+    def ambiguous_ocr(paths: list[Path]) -> list[dict]:
+        responses = []
+        for path in paths:
+            if path.name.startswith("legal_name-"):
+                text = {
+                    "legal_name-5.png": "ALPHA BUSINESS",
+                    "legal_name-7.png": "BRAVO BUSINESS",
+                    "legal_name-10.png": "CHARLIE BUSINESS",
+                }[path.name]
+            elif path.name.startswith("trade_name-"):
+                text = "SAMPLE TRADING"
+            elif path.name == "registration-row.png":
+                text = "GSTIN: 29ABCDE1234F1Z5"
+            elif path.name.startswith(("legal_name", "trade_name")):
+                text = ""
+            else:
+                text = "SPECIMEN GST CERTIFICATE GSTIN"
+            responses.append(
+                {"status": "SUCCEEDED", "text": text, "confidence": None}
+            )
+        return responses
+
+    monkeypatch.setattr(kyc_service, "_run_windows_ocr", ambiguous_ocr)
+    extraction = kyc_service._process_document_path(
+        kyc_service.KycDocumentType.GST_CERTIFICATE,
+        sample_path,
+        {"content_type": "image/png"},
+        {},
+    )
+    names = {
+        field.name: field.value
+        for field in extraction.fields
+        if field.name in {"legal_name", "trade_name"}
+    }
+
+    assert names == {"legal_name": None, "trade_name": "SAMPLE TRADING"}
+
+
+def test_address_proof_date_correction_preserves_ocr_and_recalculates_readiness(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("UDYAMONE_KYC_REQUIRED_DOCUMENTS", "address_proof")
+    monkeypatch.setattr(kyc_service, "UPLOAD_ROOT", tmp_path)
+    monkeypatch.setattr(
+        kyc_service,
+        "_run_windows_ocr",
+        lambda paths: [
+            {
+                "status": "SUCCEEDED",
+                "text": (
+                    "ADDRESS PROOF\nName of Consumer: SAMPLE PERSON\n"
+                    "Service Address: 12 SAMPLE ROAD BENGALURU\n"
+                    "Bill Date: 15/04/2026"
+                ),
+                "confidence": None,
+            }
+            for _ in paths
+        ],
+    )
+    upload = client.put(
+        "/api/v1/kyc/K01/documents/address_proof",
+        content=_image_bytes(),
+        headers={"content-type": "image/png"},
+    )
+    processed = client.post("/api/v1/kyc/K01/documents/address_proof/process")
+    reviewed = reviewer_client.post(
+        "/api/v1/kyc/K01/documents/address_proof/review",
+        json={"validation": "VALID"},
+    )
+
+    assert upload.status_code == processed.status_code == reviewed.status_code == 200
+    address = _document(reviewed.json(), "address_proof")
+    date_field = next(
+        field for field in address["extraction"]["fields"]
+        if field["name"] == "document_date"
+    )
+    assert date_field["value"] == "15/04/2026"
+    assert date_field["original_value"] == "15/04/2026"
+    assert address["recency_status"] == "EXPIRED"
+    assert reviewed.json()["ready_for_approval"] is False
+
+    corrected = client.patch(
+        "/api/v1/kyc/K01/documents/address_proof/corrections",
+        json={"fields": {"document_date": "2026-04-16"}},
+    )
+    updated = _document(corrected.json(), "address_proof")
+    updated_date = next(
+        field for field in updated["extraction"]["fields"]
+        if field["name"] == "document_date"
+    )
+    assert updated_date["original_value"] == "15/04/2026"
+    assert updated_date["corrected_value"] == "2026-04-16"
+    assert updated_date["correction_applied"] is True
+    assert updated["recency_status"] == "VALID"
+    assert corrected.json()["ready_for_approval"] is True
+
+    refreshed = client.get("/api/v1/kyc/K01")
+    persisted_address = _document(refreshed.json(), "address_proof")
+    persisted_date = next(
+        field for field in persisted_address["extraction"]["fields"]
+        if field["name"] == "document_date"
+    )
+    assert persisted_date["original_value"] == "15/04/2026"
+    assert persisted_date["corrected_value"] == "2026-04-16"
+    assert persisted_address["recency_status"] == "VALID"
+    assert refreshed.json()["ready_for_approval"] is True
+
+
+def test_optional_invalid_address_proof_does_not_block_readiness(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.delenv("UDYAMONE_KYC_REQUIRED_DOCUMENTS", raising=False)
+    monkeypatch.setattr(kyc_service, "UPLOAD_ROOT", tmp_path)
+    uploaded = client.put(
+        "/api/v1/kyc/K01/documents/address_proof",
+        content=_image_bytes(),
+        headers={"content-type": "image/png"},
+    )
+    reviewed = reviewer_client.post(
+        "/api/v1/kyc/K01/documents/address_proof/review",
+        json={"validation": "INVALID"},
+    )
+
+    assert uploaded.status_code == reviewed.status_code == 200
+    assert _document(reviewed.json(), "address_proof")["validation"] == "INVALID"
+    assert reviewed.json()["ready_for_approval"] is True

@@ -150,10 +150,18 @@ export type KycFieldStatus =
   | "INVALID_FORMAT"
   | "LOW_CONFIDENCE"
   | "MANUALLY_CORRECTED";
+export type KycRecencyStatus =
+  | "VALID"
+  | "EXPIRED"
+  | "INCONCLUSIVE"
+  | "NOT_APPLICABLE";
 export type KycExtractedField = {
   name: string;
   label: string;
   value: string | null;
+  original_value: string | null;
+  corrected_value: string | null;
+  correction_applied: boolean;
   confidence: number | null;
   status: KycFieldStatus;
   flags: string[];
@@ -170,6 +178,8 @@ export type KycExtraction = {
   mismatch_warnings: string[];
   confidence_available: boolean;
   error_code: string | null;
+  address_proof_recency: Exclude<KycRecencyStatus, "NOT_APPLICABLE"> | null;
+  address_proof_reference_date: string | null;
 };
 export type KycDocumentState = {
   document_type: KycDocumentType;
@@ -177,6 +187,8 @@ export type KycDocumentState = {
   presence: "NOT_PROVIDED" | "PROVIDED";
   validation: "NOT_REVIEWED" | "VALID" | "INVALID";
   registry_verification: "NOT_CHECKED";
+  document_source: "NOT_PROVIDED" | "COMPETITION_SAMPLE" | "CUSTOMER_UPLOAD";
+  recency_status: KycRecencyStatus;
   upload_status: "NOT_UPLOADED" | "UPLOADED";
   processing_status: KycProcessingStatus;
   original_filename: string | null;

@@ -30,6 +30,8 @@ function DocumentCard({
   document,
   role,
   consentAccepted,
+  required,
+  requested,
   busy,
   onView,
   onUpload,
@@ -40,6 +42,8 @@ function DocumentCard({
   document: KycDocumentState;
   role: KycRole;
   consentAccepted: boolean;
+  required: boolean;
+  requested: boolean;
   busy: boolean;
   onView: (documentType: KycDocumentType) => void;
   onUpload: (documentType: KycDocumentType, file: File) => void;
@@ -88,6 +92,22 @@ function DocumentCard({
 
       <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
         <div>
+          <dt className="text-[#526279]">Requirement</dt>
+          <dd className="font-medium text-[#31445e]">
+            {required ? "Required by current policy" : requested ? "Additional document requested" : "Optional"}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-[#526279]">Document source</dt>
+          <dd className="font-medium text-[#31445e]">
+            {document.document_source === "COMPETITION_SAMPLE"
+              ? "Competition sample document"
+              : document.document_source === "CUSTOMER_UPLOAD"
+                ? "Customer-uploaded document"
+                : "No document provided"}
+          </dd>
+        </div>
+        <div>
           <dt className="text-[#68768a]">Document review</dt>
           <dd className="font-medium text-[#31445e]">{document.validation.replaceAll("_", " ")}</dd>
         </div>
@@ -105,6 +125,18 @@ function DocumentCard({
             {document.processing_status.replaceAll("_", " ").toLowerCase()}
           </dd>
         </div>
+        {document.recency_status !== "NOT_APPLICABLE" ? (
+          <div>
+            <dt className="text-[#526279]">Address-proof recency</dt>
+            <dd className="font-medium text-[#31445e]">
+              {document.recency_status === "VALID"
+                ? "Valid: within 90 days of 15 July 2026"
+                : document.recency_status === "EXPIRED"
+                  ? "Expired: older than 90 days"
+                  : "Inconclusive: date needs confirmation"}
+            </dd>
+          </div>
+        ) : null}
       </dl>
 
       {document.presence === "PROVIDED" ? (
@@ -166,15 +198,33 @@ function DocumentCard({
                       >
                         {field.label}{extraction.required_fields.includes(field.name) ? " (required)" : ""}
                       </label>
-                      <input
-                        aria-describedby={`${inputId}-field-${field.name}-status`}
-                        aria-invalid={invalid || missing}
-                        className="mt-1 min-h-10 w-full rounded-md border border-[#bdc7d3] bg-white px-3 text-sm text-[#10223e] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#10223e]"
-                        defaultValue={field.value ?? ""}
-                        id={`${inputId}-field-${field.name}`}
-                        name={field.name}
-                        required={extraction.required_fields.includes(field.name)}
-                      />
+                      {field.name === "address" || field.name === "registered_address" ? (
+                        <textarea
+                          aria-describedby={`${inputId}-field-${field.name}-status`}
+                          aria-invalid={invalid || missing}
+                          className="mt-1 min-h-28 w-full resize-y rounded-md border border-[#bdc7d3] bg-white px-3 py-2 text-sm text-[#10223e] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#10223e]"
+                          defaultValue={field.value ?? ""}
+                          id={`${inputId}-field-${field.name}`}
+                          name={field.name}
+                          required={extraction.required_fields.includes(field.name)}
+                          rows={4}
+                        />
+                      ) : (
+                        <input
+                          aria-describedby={`${inputId}-field-${field.name}-status`}
+                          aria-invalid={invalid || missing}
+                          className="mt-1 min-h-10 w-full rounded-md border border-[#bdc7d3] bg-white px-3 text-sm text-[#10223e] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#10223e]"
+                          defaultValue={field.value ?? ""}
+                          id={`${inputId}-field-${field.name}`}
+                          name={field.name}
+                          required={extraction.required_fields.includes(field.name)}
+                        />
+                      )}
+                      {field.correction_applied ? (
+                        <p className="mt-1 break-words text-xs text-[#526279]">
+                          Original OCR value: {field.original_value || "No value extracted"}
+                        </p>
+                      ) : null}
                       <p
                         className={`mt-1 text-xs ${invalid || missing ? "text-[#8b2825]" : "text-[#526279]"}`}
                         id={`${inputId}-field-${field.name}-status`}
@@ -201,8 +251,13 @@ function DocumentCard({
                 <div key={field.name}>
                   <dt className="text-xs font-medium text-[#526279]">{field.label}</dt>
                   <dd className="break-words text-sm text-[#10223e]">
-                    {field.value || "Not extracted"} · {field.status.replaceAll("_", " ").toLowerCase()}
+                    Current value: {field.value || "Not extracted"} · {field.status.replaceAll("_", " ").toLowerCase()}
                   </dd>
+                  {field.correction_applied ? (
+                    <dd className="mt-1 break-words text-xs text-[#526279]">
+                      Original OCR value: {field.original_value || "No value extracted"}
+                    </dd>
+                  ) : null}
                 </div>
               ))}
             </dl>
@@ -368,7 +423,10 @@ export default function KycPage() {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
   }, [previewUrl]);
 
-  const performAction = async (action: () => Promise<KycAssessment | { message: string }>) => {
+  const performAction = async (
+    action: () => Promise<KycAssessment | { message: string }>,
+    successMessage?: string,
+  ) => {
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -376,6 +434,7 @@ export default function KycPage() {
       const result = await action();
       if ("documents" in result) {
         setAssessment(result);
+        if (successMessage) setNotice(successMessage);
       } else {
         setNotice(result.message);
         await loadAssessment();
@@ -400,6 +459,7 @@ export default function KycPage() {
     if (!applicantId) return;
     void performAction(() =>
       udyamOneApi.reviewKycDocument(applicantId, documentType, validation),
+      `Review decision saved: ${validation.toLowerCase()}.`,
     );
   };
 
@@ -415,6 +475,7 @@ export default function KycPage() {
     if (!applicantId) return;
     void performAction(() =>
       udyamOneApi.correctKycDocumentFields(applicantId, documentType, fields),
+      "Corrections saved. The original OCR values are retained.",
     );
   };
 
@@ -642,12 +703,13 @@ export default function KycPage() {
             </div>
             <div>
               <label className="text-sm font-medium" htmlFor="business-address">Business address</label>
-              <input
-                className="mt-1 min-h-10 w-full rounded-md border border-[#bdc7d3] px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#10223e]"
+              <textarea
+                className="mt-1 min-h-24 w-full resize-y rounded-md border border-[#bdc7d3] px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#10223e]"
                 id="business-address"
                 onChange={(event) => setBusinessAddress(event.target.value)}
+                rows={3}
                 value={businessAddress}
-              />
+              ></textarea>
             </div>
           </div>
           <button
@@ -762,6 +824,8 @@ export default function KycPage() {
                   busy={busy}
                   consentAccepted={consentAccepted}
                   document={document}
+                  required={assessment.required_documents.includes(document.document_type)}
+                  requested={assessment.requested_documents.includes(document.document_type)}
                   key={document.document_type}
                   onProcess={process}
                   onReview={review}

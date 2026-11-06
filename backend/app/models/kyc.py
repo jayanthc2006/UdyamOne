@@ -49,12 +49,22 @@ class KycFieldStatus(str, Enum):
     MANUALLY_CORRECTED = "MANUALLY_CORRECTED"
 
 
+class KycRecencyStatus(str, Enum):
+    VALID = "VALID"
+    EXPIRED = "EXPIRED"
+    INCONCLUSIVE = "INCONCLUSIVE"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+
+
 class KycExtractedField(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     name: str
     label: str
     value: str | None = None
+    original_value: str | None = None
+    corrected_value: str | None = None
+    correction_applied: bool = False
     confidence: float | None = Field(default=None, ge=0, le=1)
     status: KycFieldStatus
     flags: list[str] = Field(default_factory=list)
@@ -74,6 +84,8 @@ class KycExtraction(BaseModel):
     mismatch_warnings: list[str] = Field(default_factory=list)
     confidence_available: bool = False
     error_code: str | None = None
+    address_proof_recency: KycRecencyStatus | None = None
+    address_proof_reference_date: str | None = None
 
 
 class KycDocumentState(BaseModel):
@@ -84,6 +96,10 @@ class KycDocumentState(BaseModel):
     presence: KycDocumentPresence
     validation: KycDocumentValidation
     registry_verification: Literal["NOT_CHECKED"] = "NOT_CHECKED"
+    document_source: Literal[
+        "NOT_PROVIDED", "COMPETITION_SAMPLE", "CUSTOMER_UPLOAD"
+    ] = "NOT_PROVIDED"
+    recency_status: KycRecencyStatus = KycRecencyStatus.NOT_APPLICABLE
     upload_status: Literal["NOT_UPLOADED", "UPLOADED"] = "NOT_UPLOADED"
     processing_status: KycProcessingStatus = KycProcessingStatus.NOT_STARTED
     original_filename: str | None = None

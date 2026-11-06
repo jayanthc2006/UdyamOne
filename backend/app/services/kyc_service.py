@@ -8,13 +8,13 @@ import subprocess
 import tempfile
 import threading
 import uuid
+from datetime import date, datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Mapping
-from datetime import datetime, timezone
 
 import pypdfium2 as pdfium
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageEnhance, ImageFilter, UnidentifiedImageError
 
 from app.models.kyc import (
     KycAssessment,
@@ -27,6 +27,7 @@ from app.models.kyc import (
     KycExtraction,
     KycFieldStatus,
     KycProcessingStatus,
+    KycRecencyStatus,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -39,6 +40,8 @@ MAX_IMAGE_PIXELS = 30_000_000
 MAX_PDF_PAGES = 10
 OCR_TIMEOUT_SECONDS = 90
 KYC_CONSENT_VERSION = "kyc-consent-v1"
+KYC_REFERENCE_DATE = date(2026, 7, 15)
+KYC_ADDRESS_PROOF_MAX_AGE_DAYS = 90
 SUPPORTED_MIME_TYPES = {
     "image/png": (".png", b"\x89PNG\r\n\x1a\n"),
     "image/jpeg": (".jpg", b"\xff\xd8\xff"),
@@ -473,6 +476,157 @@ def _recognize_udyam_number_row(path: Path) -> str:
     return str(result.get("text", ""))
 
 
+def _gst_name_crop(image: Image.Image, row: str, angle: int, fallback: bool) -> Image.Image:
+    rotated = image.rotate(
+        angle,
+        resample=Image.Resampling.BICUBIC,
+        expand=False,
+        fillcolor="white",
+    )
+    width, height = rotated.size
+    bounds = {
+        ("legal_name", False): (0.175, 0.215),
+        ("trade_name", False): (0.215, 0.255),
+        ("legal_name", True): (0.17, 0.235),
+        ("trade_name", True): (0.215, 0.265),
+    }
+    top, bottom = bounds[(row, fallback)]
+    crop = rotated.crop(
+        (round(width * 0.40), round(height * top), round(width * 0.98), round(height * bottom))
+    )
+    crop = ImageEnhance.Contrast(crop).enhance(1.7)
+    crop = crop.filter(ImageFilter.UnsharpMask(radius=2, percent=180, threshold=3))
+    scale = 3 if fallback else 4
+    return crop.resize(
+        (crop.width * scale, crop.height * scale),
+        Image.Resampling.LANCZOS,
+    )
+
+
+def _clean_gst_name_row(text: str) -> str | None:
+    value = re.sub(r"\s+", " ", text).strip(" \t:;,.|")
+    value = re.sub(
+        r"(?i)^(?:legal\s+name\s+of\s+business|legal\s+name|trade\s+name)"
+        r"\s*[:\-|]?\s*",
+        "",
+        value,
+    )
+    if "\ufffd" in value:
+        return None
+    tokens = value.split()
+    if tokens and re.fullmatch(r"[A-Z0-9]{15}", tokens[0], re.IGNORECASE):
+        value = " ".join(tokens[1:])
+    words = re.findall(r"[A-Za-z][A-Za-z'.&()-]*", value)
+    normalised_words = [word.casefold().strip("'.&()-") for word in words]
+    if (
+        len(words) < 2
+        or any(not word for word in normalised_words)
+        or len(normalised_words) != len(set(normalised_words))
+        or any(
+            word in {"gstin", "specimen", "certificate"}
+            for word in normalised_words
+        )
+        or "principal place of business" in value.casefold()
+    ):
+        return None
+    return value
+
+
+def _recognize_gst_name_rows(path: Path) -> tuple[str | None, str | None]:
+    try:
+        with Image.open(path) as source:
+            base_rows = {
+                row: _gst_name_crop(source, row, 0, False)
+                for row in ("legal_name", "trade_name")
+            }
+    except (UnidentifiedImageError, OSError, ValueError) as error:
+        raise KycUploadValidationError(
+            "The GST specimen name region could not be read."
+        ) from error
+
+    def recognize(rows: Mapping[str, Image.Image]) -> dict[str, str | None]:
+        with tempfile.TemporaryDirectory(prefix="gst-name-ocr-") as directory:
+            paths: list[Path] = []
+            names: list[str] = []
+            for name, image in rows.items():
+                image_path = Path(directory) / f"{name}.png"
+                image.save(image_path, format="PNG")
+                paths.append(image_path)
+                names.append(name)
+            results = _run_windows_ocr(paths)
+        if any(result.get("status") == "FAILED" for result in results):
+            raise KycOcrError("The local OCR engine could not read the GST name rows.")
+        return {
+            name: _clean_gst_name_row(str(result.get("text", "")))
+            for name, result in zip(names, results)
+        }
+
+    recognized = recognize(base_rows)
+    missing_rows = [name for name, value in recognized.items() if value is None]
+    if missing_rows:
+        fallback_rows: dict[str, Image.Image] = {}
+        try:
+            with Image.open(path) as source:
+                for name in missing_rows:
+                    for angle in (5, 7, 10):
+                        fallback_rows[f"{name}-{angle}"] = _gst_name_crop(
+                            source, name, angle, True
+                        )
+        except (UnidentifiedImageError, OSError, ValueError) as error:
+            raise KycUploadValidationError(
+                "The GST specimen name region could not be read."
+            ) from error
+        candidates = recognize(fallback_rows)
+        for name in missing_rows:
+            values = [
+                value
+                for candidate_name, value in candidates.items()
+                if candidate_name.startswith(f"{name}-") and value is not None
+            ]
+            if values:
+                normalized = [value.casefold() for value in values]
+                winner = max(normalized, key=normalized.count)
+                if normalized.count(winner) > len(normalized) / 2:
+                    recognized[name] = next(
+                        value for value in values if value.casefold() == winner
+                    )
+    return recognized.get("legal_name"), recognized.get("trade_name")
+
+
+_DOCUMENT_DATE_FORMATS = (
+    "%Y-%m-%d",
+    "%d/%m/%Y",
+    "%d-%m-%Y",
+    "%d %b %Y",
+    "%d %B %Y",
+    "%b %d, %Y",
+    "%B %d, %Y",
+)
+
+
+def _assess_address_proof_recency(
+    document_date: str | None,
+    reference_date: date = KYC_REFERENCE_DATE,
+) -> KycRecencyStatus:
+    if not document_date:
+        return KycRecencyStatus.INCONCLUSIVE
+    parsed_date = None
+    for date_format in _DOCUMENT_DATE_FORMATS:
+        try:
+            parsed_date = datetime.strptime(document_date.strip(), date_format).date()
+            break
+        except ValueError:
+            continue
+    if parsed_date is None or parsed_date > reference_date:
+        return KycRecencyStatus.INCONCLUSIVE
+    age_days = (reference_date - parsed_date).days
+    return (
+        KycRecencyStatus.VALID
+        if age_days <= KYC_ADDRESS_PROOF_MAX_AGE_DAYS
+        else KycRecencyStatus.EXPIRED
+    )
+
+
 def _is_gst_specimen(text: str) -> bool:
     normalised = re.sub(r"\s+", " ", text.upper())
     return "GSTIN" in normalised and (
@@ -522,6 +676,7 @@ def _field(
         name=name,
         label=label,
         value=value.strip() if value else None,
+        original_value=value.strip() if value else None,
         confidence=confidence,
         status=status or (
             KycFieldStatus.EXTRACTED if value else KycFieldStatus.MISSING
@@ -746,6 +901,7 @@ def _extract_fields(
     udyam_number_text: str | None = None,
     documented_udyam_format: bool = False,
     gstin_value_text: str | None = None,
+    gst_name_rows: tuple[str | None, str | None] | None = None,
 ) -> tuple[
     list[KycExtractedField],
     list[str],
@@ -780,20 +936,28 @@ def _extract_fields(
                 _field(
                     "legal_name",
                     "Legal name",
-                    _label_value(
-                        text,
-                        ("Legal Name of Business", "Legal Name", "Name of Business"),
-                        ("Trade Name", "Principal Place of Business", "GSTIN/UIN", "GSTIN"),
+                    (
+                        gst_name_rows[0]
+                        if gst_name_rows is not None
+                        else _label_value(
+                            text,
+                            ("Legal Name of Business", "Legal Name", "Name of Business"),
+                            ("Trade Name", "Principal Place of Business", "GSTIN/UIN", "GSTIN"),
+                        )
                     ),
                     confidence,
                 ),
                 _field(
                     "trade_name",
                     "Trade name",
-                    _label_value(
-                        text,
-                        ("Trade Name",),
-                        ("Principal Place of Business", "GSTIN/UIN", "GSTIN"),
+                    (
+                        gst_name_rows[1]
+                        if gst_name_rows is not None
+                        else _label_value(
+                            text,
+                            ("Trade Name",),
+                            ("Principal Place of Business", "GSTIN/UIN", "GSTIN"),
+                        )
                     ),
                     confidence,
                 ),
@@ -968,9 +1132,18 @@ def _extract_fields(
         KycDocumentType.ADDRESS_PROOF: [
             "holder_name",
             "address",
+            "document_date",
         ],
     }[document_type]
     return fields, required_names, missing, invalid, low_confidence, mismatch_warnings
+
+
+def _address_proof_recency_message(status: KycRecencyStatus) -> str:
+    if status is KycRecencyStatus.VALID:
+        return "Document date is within 90 days of 15 July 2026."
+    if status is KycRecencyStatus.EXPIRED:
+        return "Document date is more than 90 days before 15 July 2026."
+    return "Document date is missing, unparseable, or after 15 July 2026; confirm it manually."
 
 
 def _extract_pdf_text(path: Path) -> tuple[str, list[Image.Image], list[str]]:
@@ -1024,6 +1197,7 @@ def _process_document_path(
     text = ""
     udyam_number_text: str | None = None
     gstin_value_text: str | None = None
+    gst_name_rows: tuple[str | None, str | None] | None = None
     try:
         content_type = metadata.get("content_type")
         if content_type == "application/pdf":
@@ -1105,6 +1279,7 @@ def _process_document_path(
                 )
             ):
                 gstin_value_text = _recognize_gst_number_row(path)
+                gst_name_rows = _recognize_gst_name_rows(path)
     except KycUploadValidationError as error:
         return KycExtraction(
             processing_status=KycProcessingStatus.FAILED,
@@ -1138,7 +1313,55 @@ def _process_document_path(
         udyam_number_text,
         _is_udyam_specimen(text),
         gstin_value_text,
+        gst_name_rows,
     )
+    address_proof_recency = None
+    if document_type is KycDocumentType.ADDRESS_PROOF:
+        document_date = next(
+            (field.value for field in fields if field.name == "document_date"),
+            None,
+        )
+        address_proof_recency = _assess_address_proof_recency(document_date)
+        date_field = next(
+            (field for field in fields if field.name == "document_date"),
+            None,
+        )
+        if date_field is not None:
+            updated_flags = [
+                flag for flag in date_field.flags
+                if not flag.startswith("Document date ")
+            ]
+            updated_flags.append(_address_proof_recency_message(address_proof_recency))
+            if (
+                address_proof_recency is KycRecencyStatus.INCONCLUSIVE
+                and date_field.value
+            ):
+                fields = [
+                    field.model_copy(
+                        update={
+                            "status": KycFieldStatus.INVALID_FORMAT,
+                            "flags": updated_flags,
+                        }
+                    )
+                    if field.name == "document_date"
+                    else field
+                    for field in fields
+                ]
+            else:
+                fields = [
+                    field.model_copy(update={"flags": updated_flags})
+                    if field.name == "document_date"
+                    else field
+                    for field in fields
+                ]
+            missing = [field.name for field in fields if field.status is KycFieldStatus.MISSING]
+            invalid = [field.name for field in fields if field.status is KycFieldStatus.INVALID_FORMAT]
+            low_confidence = [
+                field.name
+                for field in fields
+                if field.status is KycFieldStatus.LOW_CONFIDENCE
+                or (field.confidence is not None and field.confidence < 0.6)
+            ]
     return KycExtraction(
         processing_status=KycProcessingStatus.SUCCEEDED,
         detected_document_type=detected_type,
@@ -1152,6 +1375,12 @@ def _process_document_path(
         low_confidence_fields=low_confidence,
         mismatch_warnings=mismatches,
         confidence_available=confidence is not None,
+        address_proof_recency=address_proof_recency,
+        address_proof_reference_date=(
+            KYC_REFERENCE_DATE.isoformat()
+            if document_type is KycDocumentType.ADDRESS_PROOF
+            else None
+        ),
     )
 
 
@@ -1225,6 +1454,31 @@ def get_assessment(
         is_uploaded = metadata.get("source") != "SAMPLE" and bool(
             metadata.get("stored_name")
         )
+        document_source = (
+            "CUSTOMER_UPLOAD"
+            if is_uploaded
+            else "COMPETITION_SAMPLE"
+            if present and metadata.get("source") == "SAMPLE"
+            else "NOT_PROVIDED"
+        )
+        recency_status = (
+            (
+                extraction.address_proof_recency
+                if extraction and extraction.address_proof_recency
+                else _assess_address_proof_recency(
+                    next(
+                        (
+                            field.value
+                            for field in (extraction.fields if extraction else [])
+                            if field.name == "document_date"
+                        ),
+                        None,
+                    )
+                )
+            )
+            if document_type is KycDocumentType.ADDRESS_PROOF and present
+            else KycRecencyStatus.NOT_APPLICABLE
+        )
         documents.append(
             KycDocumentState(
                 document_type=document_type,
@@ -1236,6 +1490,8 @@ def get_assessment(
                 ),
                 validation=validation,
                 registry_verification="NOT_CHECKED",
+                document_source=document_source,
+                recency_status=recency_status,
                 upload_status="UPLOADED" if is_uploaded else "NOT_UPLOADED",
                 processing_status=processing_status,
                 original_filename=(
@@ -1273,6 +1529,10 @@ def get_assessment(
                 | set(states_by_type[document_type].extraction.low_confidence_fields)
             ).intersection(states_by_type[document_type].extraction.required_fields)
         )
+        or (
+            document_type is KycDocumentType.ADDRESS_PROOF
+            and states_by_type[document_type].recency_status is not KycRecencyStatus.VALID
+        )
     ]
     for document_type in outstanding_requests:
         if (
@@ -1298,6 +1558,14 @@ def get_assessment(
                 next_steps.append(
                     f"Review the {state.display_name} before final approval."
                 )
+        if (
+            document_type is KycDocumentType.ADDRESS_PROOF
+            and state.presence is KycDocumentPresence.PROVIDED
+            and state.recency_status is not KycRecencyStatus.VALID
+        ):
+            next_steps.append(
+                "Confirm that the address-proof date is within 90 days of 15 July 2026."
+            )
         if state.extraction:
             required_fields = set(state.extraction.required_fields)
             for name in state.extraction.invalid_fields:
@@ -1328,6 +1596,10 @@ def get_assessment(
                 | set(states_by_type[document_type].extraction.missing_fields)
                 | set(states_by_type[document_type].extraction.low_confidence_fields)
             ).intersection(states_by_type[document_type].extraction.required_fields)
+        )
+        and (
+            document_type is not KycDocumentType.ADDRESS_PROOF
+            or states_by_type[document_type].recency_status is KycRecencyStatus.VALID
         )
         for document_type in dict.fromkeys((*required, *outstanding_requests))
     )
@@ -1462,6 +1734,13 @@ def correct_extracted_fields(
             status = KycFieldStatus.MANUALLY_CORRECTED
             if not normalised:
                 status = KycFieldStatus.MISSING
+            elif name == "document_date":
+                recency = _assess_address_proof_recency(normalised)
+                status = (
+                    KycFieldStatus.INVALID_FORMAT
+                    if recency is KycRecencyStatus.INCONCLUSIVE
+                    else KycFieldStatus.MANUALLY_CORRECTED
+                )
             elif name == "gstin":
                 status = (
                     KycFieldStatus.MANUALLY_CORRECTED
@@ -1475,9 +1754,40 @@ def correct_extracted_fields(
                     else KycFieldStatus.INVALID_FORMAT
                 )
             extracted[name] = original.model_copy(
-                update={"value": normalised, "status": status, "flags": ["Manually corrected"]}
+                update={
+                    "value": normalised,
+                    "corrected_value": normalised,
+                    "correction_applied": True,
+                    "status": status,
+                    "flags": ["Manually corrected"],
+                }
             )
         corrected_fields = list(extracted.values())
+        address_proof_recency = extraction.address_proof_recency
+        if document_type is KycDocumentType.ADDRESS_PROOF:
+            corrected_date = next(
+                (field.value for field in corrected_fields if field.name == "document_date"),
+                None,
+            )
+            address_proof_recency = _assess_address_proof_recency(corrected_date)
+            date_field = next(
+                (field for field in corrected_fields if field.name == "document_date"),
+                None,
+            )
+            if date_field is not None:
+                date_flags = [
+                    flag for flag in date_field.flags
+                    if not flag.startswith("Document date ")
+                ]
+                date_flags.append(
+                    _address_proof_recency_message(address_proof_recency)
+                )
+                corrected_fields = [
+                    field.model_copy(update={"flags": date_flags})
+                    if field.name == "document_date"
+                    else field
+                    for field in corrected_fields
+                ]
         invalid = [
             item.name for item in corrected_fields
             if item.status is KycFieldStatus.INVALID_FORMAT
@@ -1496,6 +1806,12 @@ def correct_extracted_fields(
                 "invalid_fields": invalid,
                 "missing_fields": missing,
                 "low_confidence_fields": low,
+                "address_proof_recency": address_proof_recency,
+                "address_proof_reference_date": (
+                    KYC_REFERENCE_DATE.isoformat()
+                    if document_type is KycDocumentType.ADDRESS_PROOF
+                    else extraction.address_proof_reference_date
+                ),
                 "mismatch_warnings": _profile_mismatch_warnings(
                     corrected_fields,
                     manifest.get("profile", {}),
