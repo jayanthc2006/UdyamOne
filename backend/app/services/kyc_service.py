@@ -11,7 +11,7 @@ import uuid
 from datetime import date, datetime, timezone
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
 import pypdfium2 as pdfium
 from PIL import Image, ImageEnhance, ImageFilter, UnidentifiedImageError
@@ -29,6 +29,8 @@ from app.models.kyc import (
     KycProcessingStatus,
     KycRecencyStatus,
 )
+from app.models.verification import RegistryVerificationStatus
+from app.services import applicant_service, registry_verification_service
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SAMPLE_KYC_ROOT = PROJECT_ROOT / "data" / "sample_kyc"
@@ -39,7 +41,7 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_IMAGE_PIXELS = 30_000_000
 MAX_PDF_PAGES = 10
 OCR_TIMEOUT_SECONDS = 90
-KYC_CONSENT_VERSION = "kyc-consent-v1"
+KYC_CONSENT_VERSION = "kyc-consent-v2"
 KYC_REFERENCE_DATE = date(2026, 7, 15)
 KYC_ADDRESS_PROOF_MAX_AGE_DAYS = 90
 SUPPORTED_MIME_TYPES = {
@@ -229,9 +231,48 @@ def require_current_consent(applicant_id: str) -> KycConsentState:
         or consent.consent_version != KYC_CONSENT_VERSION
     ):
         raise KycConsentRequiredError(
-            "Current KYC consent is required before uploading or processing documents."
+            "Current KYC consent is required before KYC document or synthetic registry processing."
         )
     return consent
+
+
+def _registry_document_values(
+    manifest: Mapping[str, Any],
+) -> dict[str, str | None]:
+    documents = manifest.get("documents", {})
+
+    def value(document_type: KycDocumentType, field_name: str) -> str | None:
+        metadata = documents.get(document_type.value, {})
+        extraction_data = metadata.get("extraction") if isinstance(metadata, dict) else None
+        if not isinstance(extraction_data, dict):
+            return None
+        try:
+            extraction = KycExtraction.model_validate(extraction_data)
+        except ValueError as error:
+            raise KycStateError("Stored KYC extraction state has an invalid format.") from error
+        return next(
+            (field.value for field in extraction.fields if field.name == field_name),
+            None,
+        )
+
+    return {
+        "gstin": value(KycDocumentType.GST_CERTIFICATE, "gstin"),
+        "gst_legal_name": value(KycDocumentType.GST_CERTIFICATE, "legal_name"),
+        "gst_trade_name": value(KycDocumentType.GST_CERTIFICATE, "trade_name"),
+        "gst_registered_address": value(
+            KycDocumentType.GST_CERTIFICATE, "registered_address"
+        ),
+        "udyam_number": value(KycDocumentType.UDYAM_CERTIFICATE, "udyam_number"),
+        "udyam_enterprise_name": value(
+            KycDocumentType.UDYAM_CERTIFICATE, "enterprise_name"
+        ),
+    }
+
+
+def get_registry_document_values(applicant_id: str) -> dict[str, str | None]:
+    """Return only effective OCR/corrected fields needed by registry matching."""
+    validate_applicant_id(applicant_id)
+    return _registry_document_values(_read_manifest(applicant_id))
 
 
 def record_consent(applicant_id: str, consented: bool) -> KycAssessment:
@@ -1146,6 +1187,44 @@ def _address_proof_recency_message(status: KycRecencyStatus) -> str:
     return "Document date is missing, unparseable, or after 15 July 2026; confirm it manually."
 
 
+def _registry_context(
+    applicant_id: str,
+    manifest: Mapping[str, Any],
+) -> tuple[str | None, str | None, dict[str, str | None], bool]:
+    profile = manifest.get("profile", {})
+    business_name = (
+        profile.get("business_name") if isinstance(profile, Mapping) else None
+    )
+    city = profile.get("business_address") if isinstance(profile, Mapping) else None
+    self_reported_gstin = False
+    if applicant_id.startswith("APPL-"):
+        try:
+            applicant = applicant_service.get_applicant(applicant_id)
+        except applicant_service.ApplicantNotFoundError:
+            pass
+        else:
+            business_name = applicant.profile.business_name
+            city = applicant.profile.city
+            self_reported_gstin = (
+                applicant.profile.gstin_self_reported_status == "Verified"
+            )
+    values = _registry_document_values(manifest)
+    if not business_name:
+        business_name = (
+            values.get("gst_legal_name")
+            or values.get("gst_trade_name")
+            or values.get("udyam_enterprise_name")
+        )
+    return business_name, city, values, self_reported_gstin
+
+
+def get_registry_verification_context(
+    applicant_id: str,
+) -> tuple[str | None, str | None, dict[str, str | None], bool]:
+    validate_applicant_id(applicant_id)
+    return _registry_context(applicant_id, _read_manifest(applicant_id))
+
+
 def _extract_pdf_text(path: Path) -> tuple[str, list[Image.Image], list[str]]:
     try:
         document = pdfium.PdfDocument(str(path))
@@ -1426,8 +1505,32 @@ def get_assessment(
         else required_documents
     )
     manifest = _read_manifest(applicant_id)
+    (
+        applicant_name,
+        applicant_city,
+        registry_inputs,
+        self_reported_gstin,
+    ) = _registry_context(
+        applicant_id, manifest
+    )
+    registry_results = registry_verification_service.get_persisted_verifications(
+        applicant_id,
+        applicant_name,
+        applicant_city,
+        registry_inputs,
+    )
+    registry_type_by_document: dict[
+        KycDocumentType, Literal["GSTIN", "UDYAM"]
+    ] = {
+        KycDocumentType.GST_CERTIFICATE: "GSTIN",
+        KycDocumentType.UDYAM_CERTIFICATE: "UDYAM",
+    }
     documents: list[KycDocumentState] = []
     for document_type in KycDocumentType:
+        registry_type = registry_type_by_document.get(document_type)
+        registry_result = (
+            registry_results[registry_type] if registry_type is not None else None
+        )
         stored = _stored_document(applicant_id, document_type, manifest)
         metadata = stored[1] if stored else {}
         present = stored is not None
@@ -1489,7 +1592,11 @@ def get_assessment(
                     else KycDocumentPresence.NOT_PROVIDED
                 ),
                 validation=validation,
-                registry_verification="NOT_CHECKED",
+                registry_verification=(
+                    registry_result.status
+                    if registry_result is not None
+                    else "NOT_CHECKED"
+                ),
                 document_source=document_source,
                 recency_status=recency_status,
                 upload_status="UPLOADED" if is_uploaded else "NOT_UPLOADED",
@@ -1516,6 +1623,23 @@ def get_assessment(
         KycDocumentType(document_type)
         for document_type in manifest["requested_documents"]
     ]
+    required_registry_types: list[str] = []
+    if applicant_id.startswith("APPL-"):
+        if (
+            KycDocumentType.GST_CERTIFICATE in required
+            or KycDocumentType.GST_CERTIFICATE in requested_documents
+            or states_by_type[KycDocumentType.GST_CERTIFICATE].presence
+            is KycDocumentPresence.PROVIDED
+            or self_reported_gstin
+        ):
+            required_registry_types.append("GSTIN")
+        if (
+            KycDocumentType.UDYAM_CERTIFICATE in required
+            or KycDocumentType.UDYAM_CERTIFICATE in requested_documents
+            or states_by_type[KycDocumentType.UDYAM_CERTIFICATE].presence
+            is KycDocumentPresence.PROVIDED
+        ):
+            required_registry_types.append("UDYAM")
     outstanding_requests = [
         document_type
         for document_type in requested_documents
@@ -1586,7 +1710,40 @@ def get_assessment(
                 next_steps.append(
                     f"Confirm the {name.replace('_', ' ')} field in the {state.display_name}."
                 )
-    ready = all(
+    for registry_type in required_registry_types:
+        verification = registry_results[registry_type]
+        if verification is None:
+            document_type = (
+                KycDocumentType.GST_CERTIFICATE
+                if registry_type == "GSTIN"
+                else KycDocumentType.UDYAM_CERTIFICATE
+            )
+            state = states_by_type[document_type]
+            if (
+                state.presence is KycDocumentPresence.PROVIDED
+                and state.extraction is not None
+            ):
+                next_steps.append(
+                    f"Run {registry_type} verification against the synthetic competition registry."
+                )
+            else:
+                next_steps.append(
+                    f"Upload and process the {state.display_name} before {registry_type} verification."
+                )
+        elif verification.status is not RegistryVerificationStatus.VERIFIED:
+            if verification.status is RegistryVerificationStatus.UNAVAILABLE:
+                next_steps.append(
+                    f"{registry_type} verification is temporarily unavailable; retry the synthetic registry check."
+                )
+            elif verification.status is RegistryVerificationStatus.MISMATCH:
+                next_steps.append(
+                    f"Review the {registry_type} mismatch and correct the relevant applicant or document details."
+                )
+            else:
+                next_steps.append(
+                    f"{registry_type} verification is inconclusive; confirm the identifier and business details."
+                )
+    documents_ready = all(
         states_by_type[document_type].presence is KycDocumentPresence.PROVIDED
         and states_by_type[document_type].validation is KycDocumentValidation.VALID
         and not (
@@ -1603,6 +1760,12 @@ def get_assessment(
         )
         for document_type in dict.fromkeys((*required, *outstanding_requests))
     )
+    registries_ready = all(
+        registry_results[registry_type] is not None
+        and registry_results[registry_type].status
+        is RegistryVerificationStatus.VERIFIED
+        for registry_type in required_registry_types
+    )
 
     return KycAssessment(
         applicant_id=applicant_id,
@@ -1611,8 +1774,11 @@ def get_assessment(
         requested_documents=outstanding_requests,
         upload_requests=upload_requests,
         next_steps=list(dict.fromkeys(next_steps)),
-        ready_for_approval=ready,
+        ready_for_approval=documents_ready and registries_ready,
         consent=_current_consent(manifest),
+        gstin_verification=registry_results["GSTIN"],
+        udyam_verification=registry_results["UDYAM"],
+        required_registry_verifications=required_registry_types,
     )
 
 

@@ -15,6 +15,8 @@ def check_eligibility(request: EligibilityCheckRequest) -> EligibilityCheckRespo
     results = evaluate_bundle_eligibility(
         request.selected_product_ids,
         load_catalogue(),
-        request.business_profile,
+        request.business_profile.model_copy(
+            update={"gstin_verified": False}
+        ),
     )
     return EligibilityCheckResponse(results=results)

@@ -342,7 +342,7 @@ export default function KycPage() {
   const [previewTitle, setPreviewTitle] = useState("");
 
   const consentAccepted = assessment?.consent?.consented === true
-    && assessment.consent.consent_version === "kyc-consent-v1";
+    && assessment.consent.consent_version === "kyc-consent-v2";
 
   const loadAssessment = useCallback(async () => {
     if (!applicantId || !principal) {
@@ -466,6 +466,14 @@ export default function KycPage() {
   const process = (documentType: KycDocumentType) => {
     if (!applicantId) return;
     void performAction(() => udyamOneApi.processKycDocument(applicantId, documentType));
+  };
+
+  const verifyRegistries = () => {
+    if (!applicantId) return;
+    void performAction(
+      () => udyamOneApi.verifyKycRegistries(applicantId),
+      "Synthetic registry checks completed. Review both outcomes below.",
+    );
   };
 
   const saveCorrections = (
@@ -593,7 +601,7 @@ export default function KycPage() {
             This competition prototype uses backend-configured accounts and signed sessions; it is not production authentication.
           </p>
           <p className="mt-1">
-            Uploaded documents and KYC workflow data are stored by this prototype backend. Local OCR extracts document fields, and configured reviewers may inspect documents, request more documents and record a manual review. Registry verification is not performed.
+            Uploaded documents and KYC workflow data are stored by this prototype backend. Local OCR extracts document fields, configured reviewers may inspect documents and record manual reviews, and synthetic competition registries are used for business checks. No government registry is queried.
           </p>
         </div>
 
@@ -749,7 +757,7 @@ export default function KycPage() {
               <section className="mt-8 rounded-xl border border-[#dce4ec] bg-white p-5" aria-labelledby="kyc-consent-heading">
                 <h2 className="text-base font-semibold" id="kyc-consent-heading">Document-processing consent</h2>
                 <p className="mt-2 text-sm leading-6 text-[#526279]">
-                  Before uploading, consent to the prototype backend storing the documents and associated KYC workflow data for this applicant, using local OCR to extract information, and allowing configured reviewers to inspect the documents and record manual review outcomes or request additional documents. This is not registry verification or official approval.
+                  Consent covers storing this applicant’s documents and KYC workflow data, using local OCR to extract information, allowing configured reviewers to inspect documents and record manual outcomes or request more documents, and comparing extracted identifiers and business details with supplied synthetic GSTIN and Udyam competition datasets. These are not government systems, government verification, or official approval.
                 </p>
                 {assessment.consent ? (
                   <p className="mt-2 text-sm" role="status">
@@ -767,7 +775,7 @@ export default function KycPage() {
                         onChange={(event) => setConsentConfirmed(event.target.checked)}
                         type="checkbox"
                       />
-                      <span>I understand and consent to the document storage, local OCR and reviewer processing described above.</span>
+                      <span>I understand and consent to the document storage, local OCR, reviewer processing and synthetic registry comparisons described above.</span>
                     </label>
                     <div className="mt-3 flex flex-wrap gap-3">
                       <button
@@ -794,6 +802,82 @@ export default function KycPage() {
                 ) : null}
               </section>
             ) : null}
+
+            <section
+              className="mt-6 rounded-xl border border-[#dce4ec] bg-white p-5"
+              aria-labelledby="registry-verification-heading"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold" id="registry-verification-heading">
+                    Synthetic business registry checks
+                  </h2>
+                  <p className="mt-1 max-w-3xl text-sm leading-6 text-[#526279]">
+                    These checks use only the supplied synthetic competition datasets. They do not connect to or verify records with government GST or Udyam systems.
+                  </p>
+                </div>
+                {principal.role === "CUSTOMER" && consentAccepted ? (
+                  <button
+                    className="min-h-10 rounded-lg bg-[#10223e] px-4 text-sm font-semibold text-white hover:bg-[#1d3556] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835] disabled:opacity-60"
+                    disabled={busy}
+                    onClick={verifyRegistries}
+                    type="button"
+                  >
+                    Check synthetic registries
+                  </button>
+                ) : null}
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                {([
+                  ["GSTIN", "GSTIN", assessment.gstin_verification],
+                  ["UDYAM", "Udyam", assessment.udyam_verification],
+                ] as const).map(([registryType, registryLabel, result]) => {
+                  const required = assessment.required_registry_verifications.includes(registryType);
+                  const statusLabel = result?.status ?? "NOT_CHECKED";
+                  const statusText = statusLabel === "NOT_CHECKED"
+                    ? "Not checked"
+                    : statusLabel === "VERIFIED"
+                      ? "Verified against synthetic registry"
+                      : statusLabel === "MISMATCH"
+                        ? "Business details mismatch"
+                        : statusLabel === "UNAVAILABLE"
+                          ? "Registry unavailable"
+                          : "Inconclusive";
+                  return (
+                    <article
+                      className="rounded-lg border border-[#dfe5eb] bg-[#fcfcfb] p-4"
+                      key={registryType}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h3 className="font-semibold">{registryLabel} registry</h3>
+                        <span className="rounded-full border border-[#bdc7d3] px-2.5 py-1 text-xs font-semibold text-[#31445e]">
+                          {statusText}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-[#526279]">
+                        {result?.reason ?? "No registry check has been recorded for the current applicant details."}
+                      </p>
+                      {result?.mismatched_fields.length ? (
+                        <p className="mt-2 text-sm text-[#8b2825]">
+                          Fields to review: {result.mismatched_fields.map((field) =>
+                            field.replaceAll("_", " "),
+                          ).join(", ")}.
+                        </p>
+                      ) : null}
+                      <p className="mt-2 text-xs text-[#526279]">
+                        {required ? "Required for current KYC readiness." : "Not currently required for KYC readiness."}
+                        {result ? ` Checked ${new Date(result.checked_at).toLocaleString()}. Source: ${result.registry_source}.` : ""}
+                      </p>
+                    </article>
+                  );
+                })}
+              </div>
+              {principal.role === "CUSTOMER" && !consentAccepted ? (
+                <p className="mt-3 text-sm text-[#765719]">
+                  Current consent is required before running synthetic registry checks.
+                </p>
+              ) : null}
+            </section>
 
             <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-lg font-semibold">Applicant documents</h2>

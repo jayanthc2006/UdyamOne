@@ -82,7 +82,9 @@ def test_rejects_product_requiring_unverified_gstin(catalogue) -> None:
     )
 
     assert result.is_eligible is False
-    assert result.rejection_reasons == ["GSTIN verification is required."]
+    assert result.rejection_reasons == [
+        "Verification against the synthetic GSTIN competition registry is required."
+    ]
 
 
 def test_product_without_dependencies_is_bundle_eligible(catalogue) -> None:
@@ -171,5 +173,5 @@ def test_returns_all_individual_rejection_reasons(catalogue) -> None:
         "City tier 2 is not supported; supported tiers: 1.",
         "Employee count 2 is below the required minimum of 5.",
         "Site count 0 is below the required minimum of 1.",
-        "GSTIN verification is required.",
+        "Verification against the synthetic GSTIN competition registry is required.",
     ]

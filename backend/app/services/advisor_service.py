@@ -284,11 +284,14 @@ def _request_provider(
 def chat_with_advisor(request: AdvisorChatRequest) -> AdvisorChatResponse:
     """Interpret one user turn and run catalogue logic only on validated categories."""
     initial_requirements = list(request.primary_requirements)
+    verified_business_profile = request.business_profile.model_copy(
+        update={"gstin_verified": False}
+    )
     recommendations = None
     if initial_requirements:
         recommendations = generate_recommendations(
             RecommendationRequest(
-                business_profile=request.business_profile,
+                business_profile=verified_business_profile,
                 business_segment=request.business_segment,
                 primary_requirements=initial_requirements,
             )
@@ -308,7 +311,7 @@ def chat_with_advisor(request: AdvisorChatRequest) -> AdvisorChatResponse:
     ):
         recommendations = generate_recommendations(
             RecommendationRequest(
-                business_profile=request.business_profile,
+                business_profile=verified_business_profile,
                 business_segment=request.business_segment,
                 primary_requirements=merged_requirements,
             )

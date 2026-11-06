@@ -155,6 +155,20 @@ export type KycRecencyStatus =
   | "EXPIRED"
   | "INCONCLUSIVE"
   | "NOT_APPLICABLE";
+export type RegistryVerificationStatus =
+  | "VERIFIED"
+  | "MISMATCH"
+  | "UNAVAILABLE"
+  | "INCONCLUSIVE";
+export type RegistryVerificationResult = {
+  registry_type: "GSTIN" | "UDYAM";
+  status: RegistryVerificationStatus;
+  reason: string;
+  checked_at: string;
+  registry_source: string;
+  compared_fields: string[];
+  mismatched_fields: string[];
+};
 export type KycExtractedField = {
   name: string;
   label: string;
@@ -186,7 +200,12 @@ export type KycDocumentState = {
   display_name: string;
   presence: "NOT_PROVIDED" | "PROVIDED";
   validation: "NOT_REVIEWED" | "VALID" | "INVALID";
-  registry_verification: "NOT_CHECKED";
+  registry_verification:
+    | "NOT_CHECKED"
+    | "VERIFIED"
+    | "MISMATCH"
+    | "UNAVAILABLE"
+    | "INCONCLUSIVE";
   document_source: "NOT_PROVIDED" | "COMPETITION_SAMPLE" | "CUSTOMER_UPLOAD";
   recency_status: KycRecencyStatus;
   upload_status: "NOT_UPLOADED" | "UPLOADED";
@@ -204,6 +223,9 @@ export type KycAssessment = {
   upload_requests: KycDocumentType[];
   next_steps: string[];
   ready_for_approval: boolean;
+  gstin_verification: RegistryVerificationResult | null;
+  udyam_verification: RegistryVerificationResult | null;
+  required_registry_verifications: Array<"GSTIN" | "UDYAM">;
   consent: {
     applicant_id: string;
     consented: boolean;
@@ -392,6 +414,12 @@ export const udyamOneApi = {
     postJson<KycAssessment>(
       `/api/v1/kyc/${encodeURIComponent(applicantId)}/consent`,
       { consented },
+    ),
+  verifyKycRegistries: (applicantId: string) =>
+    requestJson<KycAssessment>(
+      `/api/v1/kyc/${encodeURIComponent(applicantId)}/verify-registries`,
+      { method: "POST" },
+      30_000,
     ),
   requestKycAdditionalDocuments: (
     applicantId: string,

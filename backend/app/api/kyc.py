@@ -14,6 +14,10 @@ from app.models.kyc import (
     KycDocumentValidation,
     KycFinalizationResponse,
 )
+from app.services.applicant_service import ApplicantNotFoundError
+from app.models.recommendation import RecommendationRequest
+from app.models.verification import RegistryVerificationStatus
+from app.services import applicant_service, registry_verification_service
 from app.services.kyc_service import (
     KycConsentRequiredError,
     KycConfigurationError,
@@ -24,6 +28,7 @@ from app.services.kyc_service import (
     finalize_applicant,
     get_assessment,
     get_document_file,
+    get_registry_verification_context,
     process_document,
     record_consent,
     request_additional_documents,
@@ -32,6 +37,7 @@ from app.services.kyc_service import (
     set_applicant_profile,
     require_current_consent,
 )
+from app.services.recommendation_service import generate_recommendations
 from app.security.kyc_auth import (
     KycPrincipal,
     get_current_kyc_principal,
@@ -71,6 +77,87 @@ def get_kyc_assessment(
         _raise_for_configuration_error(error)
     except KycStateError as error:
         _raise_for_state_error(error)
+    except registry_verification_service.RegistryPersistenceError as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(error),
+        ) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error
+
+
+@router.post("/{applicant_id}/verify-registries", response_model=KycAssessment)
+def verify_kyc_registries(
+    applicant_id: str,
+    principal: KycPrincipal = Depends(get_current_kyc_principal),
+) -> KycAssessment:
+    """Compare corrected KYC fields with the synthetic competition registries."""
+    require_kyc_role(principal, "CUSTOMER")
+    require_applicant_access(principal, applicant_id)
+    try:
+        require_current_consent(applicant_id)
+        business_name, city, document_values, _ = (
+            get_registry_verification_context(applicant_id)
+        )
+        applicant = None
+        if applicant_id.startswith("APPL-"):
+            try:
+                applicant = applicant_service.get_applicant(applicant_id)
+            except ApplicantNotFoundError as error:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Applicant was not found.",
+                ) from error
+            business_name = applicant.profile.business_name
+            city = applicant.profile.city
+
+        results = registry_verification_service.verify_applicant_registries(
+            applicant_id,
+            business_name,
+            city,
+            document_values,
+        )
+
+        if applicant is not None:
+            verified_profile = applicant.profile.business_profile.model_copy(
+                update={
+                    "gstin_verified": (
+                        results["GSTIN"].status
+                        is RegistryVerificationStatus.VERIFIED
+                    )
+                }
+            )
+            recommendations = generate_recommendations(
+                RecommendationRequest(
+                    business_profile=verified_profile,
+                    business_segment=applicant.profile.business_segment,
+                    primary_requirements=applicant.profile.primary_requirements,
+                )
+            )
+            if recommendations != applicant.recommendations:
+                applicant_service.update_applicant(
+                    applicant_id,
+                    applicant.profile,
+                    recommendations,
+                )
+        return get_assessment(applicant_id)
+    except KycConfigurationError as error:
+        _raise_for_configuration_error(error)
+    except KycStateError as error:
+        _raise_for_state_error(error)
+    except KycConsentRequiredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        ) from error
+    except registry_verification_service.RegistryPersistenceError as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(error),
+        ) from error
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
