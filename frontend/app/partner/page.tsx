@@ -270,9 +270,9 @@ export default function PartnerPage() {
                 <h3 className="mt-4 text-sm font-semibold">Fulfilment requirements</h3>
                 <ul className="mt-2 list-disc pl-5 text-sm text-[#526279]">
                   <li>Confirm site details for the estimated scope in the pricing snapshot.</li>
-                  <li>Start fulfilment, record progress notes, then mark fulfilment completed.</li>
-                  <li>Move the order to activation pending when installation work is finished.</li>
-                  <li>Operations completes the simulated activation step.</li>
+                  <li>Advance status to <strong>Fulfilment in progress</strong>, record progress notes, and complete physical setup.</li>
+                  <li>Advance status to <strong>Fulfilment completed</strong>, then hand off to <strong>Activation pending</strong>.</li>
+                  <li><em>Operations-only action:</em> Final simulated activation is completed by Operations after handoff. Partners cannot activate directly.</li>
                 </ul>
 
                 <h3 className="mt-5 text-sm font-semibold">Update fulfilment progress</h3>

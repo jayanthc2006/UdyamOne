@@ -244,15 +244,33 @@ export default function OrdersPage() {
         {principal?.role === "CUSTOMER" ? (
           applicantId ? (
             <>
-              <section className="mt-6 rounded-xl border border-[#dce4ec] bg-white p-5" aria-labelledby="place-order-heading">
+              <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                <Link
+                  className="inline-flex items-center rounded-md border border-[#bdc7d3] bg-white px-2.5 py-1 font-medium text-[#31445e] hover:bg-[#f7f9fb]"
+                  href="/get-started"
+                >
+                  ← Edit business profile
+                </Link>
+                <Link
+                  className="inline-flex items-center rounded-md border border-[#bdc7d3] bg-white px-2.5 py-1 font-medium text-[#31445e] hover:bg-[#f7f9fb]"
+                  href="/kyc"
+                >
+                  Smart KYC document checklist →
+                </Link>
+              </div>
+
+              <section className="mt-4 rounded-xl border border-[#dce4ec] bg-white p-5" aria-labelledby="place-order-heading">
                 <h2 className="text-base font-semibold" id="place-order-heading">Place an order from your latest quote</h2>
                 {orderPlaced ? (
-                  <Link
-                    className="mt-2 inline-flex min-h-10 items-center rounded-lg bg-[#10223e] px-4 text-sm font-semibold text-white"
-                    href="/orders"
-                  >
-                    View My Orders
-                  </Link>
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-xs font-semibold text-[#28613a]">Order placed successfully!</span>
+                    <Link
+                      className="inline-flex min-h-8 items-center rounded-md bg-[#10223e] px-3 text-xs font-semibold text-white"
+                      href="/orders"
+                    >
+                      View My Orders
+                    </Link>
+                  </div>
                 ) : null}
                 <p className="mt-1 text-sm leading-6 text-[#526279]">
                   This converts your latest persisted quote into a prototype order request. The quote
@@ -347,11 +365,15 @@ export default function OrdersPage() {
                 {new Date(selected.current_assignment.assigned_at).toLocaleString()}
               </p>
             ) : null}
-            {["ORDER_PLACED", "ASSIGNED", "ON_HOLD"].includes(selected.status) ? (
+            {selected.status === "ORDER_PLACED" ? (
               <button
-                className="mt-4 min-h-10 rounded-lg border border-[#e4b7b4] bg-[#fff1ef] px-3 text-sm font-semibold text-[#8b2825] disabled:opacity-60"
+                className="mt-4 min-h-10 rounded-lg border border-[#e4b7b4] bg-[#fff1ef] px-3 text-sm font-semibold text-[#8b2825] hover:bg-[#ffe8e5] disabled:opacity-60"
                 disabled={busy}
-                onClick={() => void cancelOrder(selected.order_id)}
+                onClick={() => {
+                  if (window.confirm("Are you sure you want to cancel this order request?")) {
+                    void cancelOrder(selected.order_id);
+                  }
+                }}
                 type="button"
               >
                 Cancel this order

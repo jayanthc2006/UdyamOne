@@ -363,6 +363,9 @@ export default function OperationsPage() {
                 </div>
 
                 <h3 className="mt-5 text-sm font-semibold">Lifecycle transition</h3>
+                <p className="mt-1 text-xs text-[#526279]">
+                  Permitted transitions for operations: assign partner (moves ORDER_PLACED to ASSIGNED), put order ON_HOLD, resume permitted status from ON_HOLD, advance to ACTIVATED once fulfilment is completed/pending, or cancel.
+                </p>
                 <div className="mt-2 flex flex-wrap items-end gap-3">
                   <div>
                     <label className="block text-sm font-medium" htmlFor="ops-transition">New status</label>

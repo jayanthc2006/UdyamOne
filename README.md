@@ -155,17 +155,57 @@ orders assigned to them; operations performs assignment, hold/resume and
 activation). Events are append-only in `order_events` with actor, role,
 timestamp, reason and detail.
 
-### Roles
+### Roles & Local Account Configuration
 
 `OPERATIONS` and `PARTNER` join the existing `CUSTOMER`/`REVIEWER` roles in
 the same environment-configured prototype accounts (`UDYAMONE_KYC_AUTH_USERS`).
+To enable all four roles in a local development/testing environment without
+committing secrets to source control, configure your process environment or local `.env`:
+
+```json
+[
+  {
+    "username": "customer1",
+    "role": "CUSTOMER",
+    "password_hash": "<pbkdf2_sha256_hash>",
+    "applicant_ids": ["APPL-..."]
+  },
+  {
+    "username": "reviewer1",
+    "role": "REVIEWER",
+    "password_hash": "<pbkdf2_sha256_hash>",
+    "applicant_ids": []
+  },
+  {
+    "username": "ops1",
+    "role": "OPERATIONS",
+    "password_hash": "<pbkdf2_sha256_hash>",
+    "applicant_ids": []
+  },
+  {
+    "username": "partner1",
+    "role": "PARTNER",
+    "password_hash": "<pbkdf2_sha256_hash>",
+    "applicant_ids": []
+  }
+]
+```
+
+Generate password hashes using the interactive helper:
+```powershell
+python -c "from getpass import getpass; from app.security.kyc_auth import hash_password; print(hash_password(getpass()))"
+```
+
 Operations use `/operations` to search, filter, assign/reassign partners and
 drive lifecycle transitions. Partners use `/partner` to see only their own
 assigned orders and record fulfilment progress. Customers use `/orders` to
 place orders and track status, progress steps, assignment, timeline and the
 immutable pricing snapshot. Cross-applicant and cross-partner access is
 rejected by the backend; partner identity always comes from the signed
-session.
+session. If no local PARTNER account is configured, live testing of `/partner`
+will require adding one using the JSON schema above. Automated test suites use
+isolated test fixtures (`test_orders.py`) which
+automatically inject temporary test credentials into memory.
 
 ### Storage
 
@@ -183,6 +223,14 @@ Run the backend regression suite from the repository root with:
 ```powershell
 .\.venv\Scripts\python.exe -m pytest backend\tests -q
 ```
+
+## Key Documentation
+
+- [`docs/PHASE5_DELIVERY_REPORT.md`](docs/PHASE5_DELIVERY_REPORT.md) — Phase 5 technical delivery report, state machine, API endpoints, and verification audit matrix.
+- [`docs/TECHNICAL_ARCHITECTURE.md`](docs/TECHNICAL_ARCHITECTURE.md) — System architecture, Mermaid sequence diagrams, domain service layers, security, and production roadmap.
+- [`docs/LOCAL_DEMO_SETUP.md`](docs/LOCAL_DEMO_SETUP.md) — Local development setup, environment variables, prototype account configuration, and test instructions.
+- [`docs/DEMO_RUNBOOK.md`](docs/DEMO_RUNBOOK.md) — Step-by-step evaluator walkthrough, role demonstration script, and synthetic verification cases (K01/K07).
+- [`docs/phase3_1_kyc.md`](docs/phase3_1_kyc.md) — Smart KYC document workflow, local OCR engine, and verification rules.
 
 ## Layout
 
