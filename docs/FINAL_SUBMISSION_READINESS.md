@@ -1,6 +1,6 @@
 # Final Submission Readiness — UdyamOne (Round 1, Airtel SYNC 2026)
 
-**Team:** PulseForge · **Baseline:** determined via `git rev-parse HEAD` at review time · **Review date:** 8 November 2026
+**Team:** PulseForge · **Baseline commit:** `6a70673` · **Review date:** 8 November 2026
 
 ---
 
@@ -8,28 +8,28 @@
 
 A **core happy-path browser walkthrough was manually performed on 8 November 2026** and is supported by screenshots. Demonstrated: landing page → guided onboarding → recommendations/bundle review → AI advisor (English and Telugu) → estimated pricing and backend quote preview → Smart KYC sign-in → inspection of existing GST/Udyam specimens, OCR values and prior corrections → consent decision reviewed (recorded 6 Nov 2026) → synthetic registry checks (**observed: GSTIN INCONCLUSIVE, Udyam MISMATCH**) → prototype order placed after estimate confirmation → Operations Dashboard assignment to a configured partner → Partner Workspace fulfilment (In Progress → Completed → Activation Pending) → Operations simulated activation → customer verification of Activated status, pricing snapshot, milestones and chronological event history.
 
-**Not newly tested in that walkthrough (remains open):** fresh consent acceptance; fresh document upload + new OCR run; a positive GSTIN/Udyam registry match; Reviewer-role walkthrough; negative authorization scenarios in the browser; all validation/empty/loading/failure states; complete responsive testing. Automated evidence (201 backend tests; 29/29 isolated API E2E previously recorded) is **separate** from this manual walkthrough.
+**Not newly tested in that walkthrough (remains open):** fresh consent acceptance; fresh document upload + new OCR run; a positive GSTIN/Udyam registry match; Reviewer-role walkthrough; negative authorization scenarios in the browser; all validation/empty/loading/failure states; complete responsive testing. Automated evidence (205 backend tests reported passing after the KYC read-authorization patch; 29/29 isolated API E2E checks from an earlier run, not rerun as part of that patch) is **separate** from this manual walkthrough.
 
 ---
 
 ## 1. Engineering Baseline
 
-The following results are from previously recorded runs, documented in `docs/PHASE5_DELIVERY_REPORT.md`. They have not been rerun as part of this documentation review.
+The following results reflect the latest reported verification for the KYC read-authorization work and the previously recorded isolated API E2E run. The E2E checks were not rerun as part of the KYC authorization patch.
 
-| Gate | Command | Recorded result |
+| Gate | Command / Evidence | Recorded result |
 |---|---|---|
-| Backend regression | `.\.venv\Scripts\python.exe -m pytest backend\tests -q` | **201 passed**, 9 warnings (previously recorded run) |
-| Frontend ESLint | `npm.cmd --prefix frontend run lint` | **0 errors, 0 warnings** (previously recorded run) |
-| Next.js production build | `npm.cmd --prefix frontend run build` | **Success**; all routes prerendered, including `/kyc`, `/operations`, `/orders` and `/partner` (previously recorded run) |
-| Isolated QA E2E | QA harness runner | **29/29 checks passed** (previously recorded run) |
+| Backend regression | `.\.venv\Scripts\python.exe -m pytest backend\tests -q` | **205 passed, 9 warnings** (reported after KYC authorization patch) |
+| Frontend ESLint | `npm.cmd --prefix frontend run lint` | **Passed** (reported after KYC authorization patch) |
+| Next.js production build | `npm.cmd --prefix frontend run build` | **Passed** (reported after KYC authorization patch) |
+| Isolated API E2E | QA harness runner | **29/29 passed** (previously recorded run; not rerun for the KYC authorization patch) |
 
-**Baseline working-tree note:** The QA harness, analysis assets and related Phase 5 work were committed through `875eb97` on `main`. This describes the state of that baseline commit, not the current local working tree. Check `git status` before staging or committing further documentation changes.
+**Git baseline:** Remote `main` was verified on 8 November 2026 at commit `6a70673` (`Harden KYC read authorization and update security documentation`). This commit includes the KYC read-authorization remediation, regression tests and security documentation updates. Subsequent final-submission documentation edits are tracked separately; check `git status` before staging or committing.
 
 ---
 
 ## 2. Manual Browser Testing Plan
 
-**Status: core happy-path manually verified (see section 0, 8 November 2026).** The remaining checklist steps below cover the flows not exercised in that walkthrough (fresh consent/upload/OCR, positive registry match, Reviewer role, negative authorization scenarios, error/empty states, responsive sizes). Every step maps to verified backend behaviour (test file noted), so any frontend mismatch is easy to localize.
+**Status: core happy-path manually verified (see section 0, 8 November 2026).** The remaining checklist steps below cover the flows not exercised in that walkthrough (fresh consent/upload/OCR, positive registry match, Reviewer role, negative authorization scenarios, error/empty states, responsive sizes). Every step maps to backend behaviour (test file noted), so any frontend mismatch is easy to localize.
 
 The plan below is ready for execution. Estimated execution time is approximately 20 minutes, excluding setup and troubleshooting. Each step maps to backend behaviour or an identified frontend check.
 
@@ -95,6 +95,8 @@ These expectations should be verified in the running application, not assumed fr
 | B3 | Earlier browser automation encountered a development-server origin restriction. `allowedDevOrigins` was added to `frontend/next.config.ts` during the earlier development work. | Development-server preview or automation may encounter an origin issue if the setting is absent or incorrect. | Confirm the setting in the current file before using the development server. A production-mode run using `npm run build` followed by `npm start` is an alternative. | **Verify if using dev server** |
 | B4 | OCR depends on Windows OCR language capability and runtime availability for the user running the application. | OCR may fail on the demo machine even if it worked elsewhere. | Verify local OCR once with a specimen before recording. The backend should report failure honestly rather than silently substituting a remote provider. | **Verify once** |
 | B5 | The broader 14-step plan (negative paths, fresh upload/OCR, positive registry match, Reviewer role, responsive sizes) has not been executed as a recorded checklist. | Coverage gaps may remain despite the happy-path walkthrough. | Work through the section 2 checklist, prioritising role/negative flows. | **Open — coverage item, not a defect** |
+| B6 | GitHub repository visibility is PRIVATE; evaluator access has not yet been confirmed. | Evaluators may be unable to inspect the source code. | Confirm collaborator access for the evaluators or use an explicitly permitted repository-visibility option under competition rules. Do not expose the repository publicly without approval. | **Action required before submission** |
+| B7 | Final demonstration video has not yet been recorded. | Video submission may remain incomplete. | Record and review a final walkthrough of approximately 1 minute 30 seconds to 2 minutes, covering onboarding, recommendations, quote, Smart KYC, order placement, partner fulfilment and simulated activation. | **Pending** |
 | P3 (accepted) | Header navigation can update approximately two seconds after sign-out due to polling; synthetic registries, estimated pricing and simulated activation are prototype limitations. | Minor presentation friction and scope limitations. | Disclose prototype boundaries and follow the demo runbook. | Accepted with disclosure |
 
 **Code-review qualification:** The earlier Phase 5 review recorded the presence of negative-path handling, user-readable error responses and empty/loading/error states in the frontend. Combined with the manual walkthrough (section 0), this does not constitute exhaustive functional testing; the untested items listed there remain open.
@@ -105,9 +107,9 @@ During the walkthrough, in-page navigation defects were observed on `/get-starte
 
 ## 4. Go/No-Go Recommendation
 
-**GO — the core journey has been manually demonstrated end-to-end (section 0); remaining items are preparation and coverage tasks, not product defects.**
+**CONDITIONAL GO — the core journey has been manually demonstrated end-to-end (section 0).** Proceed with final demonstration preparation, but do not mark the submission complete until the outstanding access, recording and verification actions below are resolved.
 
-The engineering baseline (201 backend tests, clean lint, successful production build, 29/29 isolated QA E2E) plus the completed manual happy-path walkthrough support proceeding with recording and submission.
+The engineering verification record (205 backend tests reported passing, frontend ESLint passed, Next.js production build passed, and 29/29 previously recorded isolated API E2E checks) supports proceeding with final preparation. The 29/29 E2E result is from an earlier run and was not rerun as part of the KYC read-authorization patch.
 
 ### Conditions before recording the final demo
 
@@ -116,6 +118,8 @@ The engineering baseline (201 backend tests, clean lint, successful production b
 3. **Verify OCR on the actual recording machine** — the walkthrough inspected existing OCR results; a fresh upload/OCR run has not been tested.
 4. **Browser re-verify the corrected in-page scrolling** (Bundle options / Compare bundles / Edit profile / landing anchors) at desktop and mobile widths.
 5. **Check `git status` and demo configuration** (frontend origin config, environment variables without exposing values, startup path) before recording.
+6. **Confirm evaluator access to GitHub** — the repository is currently private; verify collaborator permissions or an approved visibility arrangement.
+7. **Record and review the final demonstration video** — target approximately 1 minute 30 seconds to 2 minutes.
 
 After these are addressed, capture screenshots per `docs/DEMO_SCREENSHOT_PLAN.md` and finalise the seven-slide deck.
 

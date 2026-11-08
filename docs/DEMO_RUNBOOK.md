@@ -14,7 +14,7 @@ Before starting a live evaluation or recording a demonstration video, ensure the
 - [ ] **Python Backend Running**: Accessible at [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health) returning `{"status": "ok"}`.
 - [ ] **Next.js Frontend Running**: Accessible at [http://127.0.0.1:3000](http://127.0.0.1:3000).
 - [ ] **Prototype Accounts Configured**: Valid JSON accounts in `UDYAMONE_KYC_AUTH_USERS` representing all four roles:
-  - `CUSTOMER` (e.g. `cust_demo`)
+  - `CUSTOMER` (e.g. `customer_demo`)
   - `REVIEWER` (e.g. `reviewer_demo`)
   - `OPERATIONS` (e.g. `ops_demo`)
   - `PARTNER` (e.g. `partner_demo`)
@@ -53,8 +53,8 @@ Before starting a live evaluation or recording a demonstration video, ensure the
 
 ### Step 3: Smart KYC & Synthetic Registry Verification
 1. Navigate to **Smart KYC** via the top navigation bar (`/kyc`).
-2. Sign in as the `CUSTOMER` account (`cust_demo`).
-3. Point out the role badge: `Signed in as cust_demo · customer`.
+2. Sign in as the `CUSTOMER` account (`customer_demo`).
+3. Point out the role badge: `Signed in as customer_demo · customer`.
 4. **Consent Gate**: Read the document-processing notice. Check the confirmation box and click **Accept KYC consent**. Notice that upload and processing controls become active only after consent is recorded.
 5. **Synthetic Registry Checks**: Click **Run synthetic registry checks**.
    - Review GSTIN Verification status (`VERIFIED` or `MISMATCH`).
@@ -132,7 +132,7 @@ Before starting a live evaluation or recording a demonstration video, ensure the
 ---
 
 ### Step 8: Customer Tracking Verification
-1. Return to the Customer session (`cust_demo`) at `/orders`.
+1. Return to the Customer session (`customer_demo`) at `/orders`.
 2. Refresh the order view.
 3. **Expected UI Outcome**:
    - Current status shows `Activated`.
@@ -187,11 +187,13 @@ This is **human-operated testing**, distinct from automated headless browser tes
 All automated regression and API E2E scripts use isolated, temporary SQLite databases in the OS temp directory and do not alter the persistent development database.
 
 If you wish to reset your local development database (`backend/data/applicants.sqlite3`):
+
 ```powershell
 # Stop the backend server first
 Remove-Item backend\data\applicants.sqlite3 -Force -ErrorAction SilentlyContinue
 # Starting the backend will automatically re-create clean schema tables
 ```
+
 *(Do not delete mock registries in `data/mock_registries/` or specimen documents in `data/kyc_documents/`).*
 
 ---
@@ -201,4 +203,4 @@ Remove-Item backend\data\applicants.sqlite3 -Force -ErrorAction SilentlyContinue
 1. **Synthetic Registries**: GSTIN and Udyam checks validate against competition mock CSVs. No real government portals are queried.
 2. **Prototype Quotations**: Quotations are non-binding estimates. No payment processing, gateways, or commercial billing accounts are provisioned.
 3. **Simulated Activation**: Activation transitions within the software state machine. No physical telecom provisioning or network element configuration occurs.
-4. **Browser Testing Out of Scope (automation)**: Formal automated quality gates rely on backend pytest suites (201 tests), previously verified isolated API E2E scripts (29/29 checks), frontend ESLint, and Next.js production builds. Headless browser automation was not executed. Separately, a **human-operated core walkthrough was completed on 8 November 2026** (see §2a); its coverage limits are listed there.
+4. **Browser Testing Out of Scope (automation)**: Formal automated quality gates rely on backend pytest suites (**205 tests reported passing**, with 9 warnings in the reported run), previously verified isolated API E2E scripts (29/29 checks), frontend ESLint, and Next.js production builds. Headless browser automation was not executed. Separately, a **human-operated core walkthrough was completed on 8 November 2026** (see §2a); its coverage limits are listed there.

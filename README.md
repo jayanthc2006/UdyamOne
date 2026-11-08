@@ -4,12 +4,11 @@ UdyamOne is a full-stack MSME digital-onboarding prototype for Airtel SYNC 2026 
 
 > **Prototype disclosures**: business-registry checks use the supplied synthetic competition datasets (no live GSTN/Udyam APIs are queried), order pricing is estimated and non-binding, and activation is simulated — no real telecom provisioning occurs.
 
-
 ## Prerequisites
 
 - Python 3.11 or newer
-- A working Python installation (the currently registered Microsoft Store
-  Python 3.11 installation must be repaired or replaced before setup)
+- Node.js and npm
+- A working Python installation
 
 ## Setup
 
@@ -20,30 +19,41 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 ```
 
-Install dependencies and start the development server:
+Install dependencies and start the backend development server:
 
 ```powershell
 pip install -r backend\requirements.txt
 Set-Location backend
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-The health endpoint is available at [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
-and returns the current application status.
+The health endpoint is available at [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health) and returns the current application status.
+
+### Start the Frontend
+
+Open a separate PowerShell terminal from the repository root:
+
+```powershell
+Set-Location frontend
+npm install
+npm run dev
+```
+
+The frontend will be available at [http://localhost:3000](http://localhost:3000).
+
+Keep both backend and frontend terminals running while using the application.
 
 ## Tests
 
-From the `backend` directory:
+From the repository root:
 
 ```powershell
-pytest
+.\.venv\Scripts\python.exe -m pytest backend\tests -q
 ```
 
 ## AI business advisor
 
-The advisor is optional. It returns an explicit `503` response when the backend
-LLM provider is not configured. Copy `backend\.env.example` as a reference and
-set these variables in the backend process environment:
+The advisor is optional. It returns an explicit `503` response when the backend LLM provider is not configured. Copy `backend\.env.example` as a reference and set these variables in the backend process environment:
 
 ```powershell
 $env:UDYAMONE_LLM_API_KEY = "your-provider-key"
@@ -52,117 +62,65 @@ $env:UDYAMONE_LLM_MODEL = "your-compatible-model"
 $env:UDYAMONE_LLM_TIMEOUT_SECONDS = "20"
 ```
 
-Keep the key on the backend; do not use a `NEXT_PUBLIC_` variable. The adapter
-posts to the OpenAI-compatible `/chat/completions` endpoint. The provider handles
-message interpretation and response wording; the existing recommendation,
-eligibility, dependency and pricing services remain authoritative. Chat content
-is held only in browser memory and is sent to the configured provider per turn.
+Keep the key on the backend; do not use a `NEXT_PUBLIC_` variable. The adapter posts to the OpenAI-compatible `/chat/completions` endpoint. The provider handles message interpretation and response wording; the existing recommendation, eligibility, dependency and pricing services remain authoritative. Chat content is held only in browser memory and is sent to the configured provider per turn.
 
-`POST /api/v1/advisor/chat` accepts the business profile, segment, current
-requirement categories, bounded conversation messages and a language (`en`,
-`hi`, `te`, `ta` or `kn`). Its response contains a conversational reply,
-validated extracted categories and separately structured catalogue-backed
-recommendations when applicable.
+`POST /api/v1/advisor/chat` accepts the business profile, segment, current requirement categories, bounded conversation messages and a language (`en`, `hi`, `te`, `ta` or `kn`). Its response contains a conversational reply, validated extracted categories and separately structured catalogue-backed recommendations when applicable.
 
 ## KYC consent and prototype roles
 
-The KYC document workflow requires backend-configured `CUSTOMER` and `REVIEWER`
-accounts. Configure `UDYAMONE_KYC_AUTH_SECRET` with a random value of at least
-32 bytes and `UDYAMONE_KYC_AUTH_USERS` with JSON account records containing a
-username, role, PBKDF2-SHA256 password hash, and applicant IDs for each customer.
-Generate a password hash interactively from the `backend` directory with:
+The KYC document workflow requires backend-configured `CUSTOMER` and `REVIEWER` accounts. Configure `UDYAMONE_KYC_AUTH_SECRET` with a random value of at least 32 bytes and `UDYAMONE_KYC_AUTH_USERS` with JSON account records containing a username, role, PBKDF2-SHA256 password hash, and applicant IDs for each customer. Generate a password hash interactively from the `backend` directory with:
 
 ```powershell
 python -c "from getpass import getpass; from app.security.kyc_auth import hash_password; print(hash_password(getpass()))"
 ```
 
-Customer consent, its version and timestamp, and reviewer-requested document
-types are stored with that applicant's local KYC manifest. Uploads and local OCR
-processing are blocked until current consent is recorded. Keep the signing
-secret and account configuration in the backend process environment; do not
-place them in frontend variables or source control.
+Customer consent, its version and timestamp, and reviewer-requested document types are stored with that applicant's local KYC manifest. Uploads and local OCR processing are blocked until current consent is recorded. Keep the signing secret and account configuration in the backend process environment; do not place them in frontend variables or source control.
 
-This environment-configured authentication is **competition-prototype-only**.
-It is not production authentication and does not provide account lifecycle,
-password reset, MFA, SSO, or centralized revocation. Do not deploy it as a
-production identity system.
+This environment-configured authentication is **competition-prototype-only**. It is not production authentication and does not provide account lifecycle, password reset, MFA, SSO, or centralized revocation. Do not deploy it as a production identity system.
+
+### Known pre-KYC prototype limitation
+
+The applicant onboarding and quotation workflow currently includes four unauthenticated endpoints:
+
+- `POST /api/v1/applicants` — creates a new applicant and returns its ID.
+- `PUT /api/v1/applicants/{applicant_id}` — updates an existing applicant.
+- `GET /api/v1/applicants/{applicant_id}` — retrieves an existing applicant.
+- `POST /api/v1/applicants/{applicant_id}/quotes/preview` — generates a quote preview.
+
+These endpoints do not require a session or role check. The three endpoints accepting an existing applicant ID do not enforce applicant ownership. A caller who knows an applicant ID may therefore access or modify pre-KYC profile and quotation data.
+
+Opaque `APPL-` identifiers reduce casual enumeration but are not an authorization boundary.
+
+This is an accepted limitation only for the synthetic competition prototype. Applicant-scoped authorization must be implemented before processing real customer data or exposing the application in production.
 
 ## Synthetic business registry verification
 
-The KYC workflow can compare corrected local-OCR fields with the supplied
-competition datasets:
+The KYC workflow can compare corrected local-OCR fields with the supplied competition datasets:
 
-- `data/mock_registries/mock_gstin_registry.csv` (GSTIN, legal/trade names,
-  principal place of business, state, and record status).
-- `data/mock_registries/mock_udyam_registry.csv` (Udyam number, enterprise
-  name/type, state, and city).
+- `data/mock_registries/mock_gstin_registry.csv` (GSTIN, legal/trade names, principal place of business, state, and record status).
+- `data/mock_registries/mock_udyam_registry.csv` (Udyam number, enterprise name/type, state, and city).
 
-`POST /api/v1/kyc/{applicant_id}/verify-registries` runs both checks for the
-authenticated customer and persists only the status, reason, timestamp,
-dataset filename, comparison field names, and a one-way fingerprint of the
-inputs in the existing applicant SQLite database. Registry rows and submitted
-identifiers are not copied into the verification table. The decision uses the
-effective OCR/corrected certificate fields and the saved applicant business
-name/city; GSTIN normalization removes separators and applies uppercase before
-format validation, while names and city are compared after Unicode and
-punctuation normalization. Available GST address text is compared with the
-registered address. A non-active GST record is a mismatch.
+`POST /api/v1/kyc/{applicant_id}/verify-registries` runs both checks for the authenticated customer and persists only the status, reason, timestamp, dataset filename, comparison field names, and a one-way fingerprint of the inputs in the existing applicant SQLite database. Registry rows and submitted identifiers are not copied into the verification table. The decision uses the effective OCR/corrected certificate fields and the saved applicant business name/city; GSTIN normalization removes separators and applies uppercase before format validation, while names and city are compared after Unicode and punctuation normalization. Available GST address text is compared with the registered address. A non-active GST record is a mismatch.
 
-Each registry reports one of `VERIFIED`, `MISMATCH`, `UNAVAILABLE`, or
-`INCONCLUSIVE`. Conflicting duplicate identifiers and insufficient comparisons
-are inconclusive; identical duplicate rows collapse to one logical record.
-Missing or malformed registry files are reported as unavailable. KYC readiness
-requires a verified outcome only for applicable registries on new `APPL-`
-applicant journeys (a required or requested GST/Udyam document, an uploaded
-document, or a self-reported verified GSTIN). Existing competition sample KYC
-records retain their prior readiness rules. An unavailable, inconclusive, or
-mismatched result remains visible with a next step and does not convert the
-document review decision to INVALID.
+Each registry reports one of `VERIFIED`, `MISMATCH`, `UNAVAILABLE`, or `INCONCLUSIVE`. Conflicting duplicate identifiers and insufficient comparisons are inconclusive; identical duplicate rows collapse to one logical record. Missing or malformed registry files are reported as unavailable. KYC readiness requires a verified outcome only for applicable registries on new `APPL-` applicant journeys (a required or requested GST/Udyam document, an uploaded document, or a self-reported verified GSTIN). Existing competition sample KYC records retain their prior readiness rules. An unavailable, inconclusive, or mismatched result remains visible with a next step and does not convert the document review decision to INVALID.
 
-GSTIN-required catalogue products use a persisted, current GSTIN verification
-for applicant-scoped recommendations and quotes. The direct, unscoped
-recommendation, eligibility, quote, and advisor APIs cannot assert registry
-verification from their request body, so GSTIN-gated products remain ineligible
-there. Other catalogue rules and products are unchanged. A change to the saved
-profile or extracted/corrected identifier/name/address makes its earlier result
-stale; a new check is required before it can affect eligibility.
+GSTIN-required catalogue products use a persisted, current GSTIN verification for applicant-scoped recommendations and quotes. The direct, unscoped recommendation, eligibility, quote, and advisor APIs cannot assert registry verification from their request body, so GSTIN-gated products remain ineligible there. Other catalogue rules and products are unchanged. A change to the saved profile or extracted/corrected identifier/name/address makes its earlier result stale; a new check is required before it can affect eligibility.
 
-These are synthetic competition datasets only: a match is not a government
-record lookup, legal validation, or official GST/Udyam verification. The
-consent version is updated when this comparison purpose is introduced, so an
-applicant must accept the current consent before running checks. Competition
-sample records, including K05, remain available without new registry readiness
-gates.
+These are synthetic competition datasets only: a match is not a government record lookup, legal validation, or official GST/Udyam verification. The consent version is updated when this comparison purpose is introduced, so an applicant must accept the current consent before running checks. Competition sample records, including K05, remain available without new registry readiness gates.
 
 ## Order-to-activation operations (Phase 5)
 
-After a customer accepts their estimated quote they can convert it into a
-confirmed **prototype order request** with `POST /api/v1/orders` (explicit
-`confirmed: true` required). The order snapshots the quote immutably — line
-items, estimated monthly range, setup fees, quote reference and a
-"not a binding commercial offer" disclosure — and stores it as JSON with the
-order. Profile edits, catalogue changes and later quotes never modify an
-existing snapshot. Only one active order may exist per applicant; cancelled
-orders permit a new one. There is no payment processing, gateway, contract or
-commercial provisioning in this prototype.
+After a customer accepts their estimated quote they can convert it into a confirmed **prototype order request** with `POST /api/v1/orders` (explicit `confirmed: true` required). The order snapshots the quote immutably — line items, estimated monthly range, setup fees, quote reference and a "not a binding commercial offer" disclosure — and stores it as JSON with the order. Profile edits, catalogue changes and later quotes never modify an existing snapshot. Only one active order may exist per applicant; cancelled orders permit a new one. There is no payment processing, gateway, contract or commercial provisioning in this prototype.
 
 ### Lifecycle
 
-`ORDER_PLACED → ASSIGNED → FULFILMENT_IN_PROGRESS → FULFILMENT_COMPLETED →
-ACTIVATION_PENDING → ACTIVATED`, with `ON_HOLD` and `CANCELLED` side states.
-Transitions are enforced by the backend state machine
-(`backend/app/models/order.py`) and every transition is validated against a
-role matrix (customers may cancel; partners advance fulfilment steps only on
-orders assigned to them; operations performs assignment, hold/resume and
-activation). Events are append-only in `order_events` with actor, role,
-timestamp, reason and detail.
+`ORDER_PLACED → ASSIGNED → FULFILMENT_IN_PROGRESS → FULFILMENT_COMPLETED → ACTIVATION_PENDING → ACTIVATED`, with `ON_HOLD` and `CANCELLED` side states.
+
+Transitions are enforced by the backend state machine (`backend/app/models/order.py`) and every transition is validated against a role matrix (customers may cancel; partners advance fulfilment steps only on orders assigned to them; operations performs assignment, hold/resume and activation). Events are append-only in `order_events` with actor, role, timestamp, reason and detail.
 
 ### Roles & Local Account Configuration
 
-`OPERATIONS` and `PARTNER` join the existing `CUSTOMER`/`REVIEWER` roles in
-the same environment-configured prototype accounts (`UDYAMONE_KYC_AUTH_USERS`).
-To enable all four roles in a local development/testing environment without
-committing secrets to source control, configure your process environment or local `.env`:
+`OPERATIONS` and `PARTNER` join the existing `CUSTOMER`/`REVIEWER` roles in the same environment-configured prototype accounts (`UDYAMONE_KYC_AUTH_USERS`). To enable all four roles in a local development/testing environment without committing secrets to source control, configure your process environment or local `.env`:
 
 ```json
 [
@@ -194,31 +152,22 @@ committing secrets to source control, configure your process environment or loca
 ```
 
 Generate password hashes using the interactive helper:
+
 ```powershell
 python -c "from getpass import getpass; from app.security.kyc_auth import hash_password; print(hash_password(getpass()))"
 ```
 
-Operations use `/operations` to search, filter, assign/reassign partners and
-drive lifecycle transitions. Partners use `/partner` to see only their own
-assigned orders and record fulfilment progress. Customers use `/orders` to
-place orders and track status, progress steps, assignment, timeline and the
-immutable pricing snapshot. Cross-applicant and cross-partner access is
-rejected by the backend; partner identity always comes from the signed
-session. If no local PARTNER account is configured, live testing of `/partner`
-will require adding one using the JSON schema above. Automated test suites use
-isolated test fixtures (`test_orders.py`) which
-automatically inject temporary test credentials into memory.
+Operations use `/operations` to search, filter, assign/reassign partners and drive lifecycle transitions. Partners use `/partner` to see only their own assigned orders and record fulfilment progress. Customers use `/orders` to place orders and track status, progress steps, assignment, timeline and the immutable pricing snapshot.
+
+Authenticated KYC and order operations enforce their respective server-side role and ownership checks. Customers are restricted to their configured applicant records, reviewers access KYC through the review workflow, and partners can access only their currently assigned orders. The unauthenticated pre-KYC applicant routes described above are an explicit exception and must not be treated as ownership-protected.
+
+If no local PARTNER account is configured, live testing of `/partner` will require adding one using the JSON schema above. Automated test suites use isolated test fixtures (`test_orders.py`) which automatically inject temporary test credentials into memory.
 
 ### Storage
 
-Orders live in the existing applicant SQLite database as three new tables
-(`orders`, `order_events`, `order_assignments`) created by an idempotent
-`CREATE TABLE IF NOT EXISTS` migration on first use. Assignment history is
-preserved by marking superseded rows rather than deleting them.
+Orders live in the existing applicant SQLite database as three new tables (`orders`, `order_events`, `order_assignments`) created by an idempotent `CREATE TABLE IF NOT EXISTS` migration on first use. Assignment history is preserved by marking superseded rows rather than deleting them.
 
-Activation is simulated: no network activation or telecom provisioning is
-performed. Registry checks remain synthetic competition datasets, not
-government GST/Udyam verification.
+Activation is simulated: no network activation or telecom provisioning is performed. Registry checks remain synthetic competition datasets, not government GST/Udyam verification.
 
 Run the backend regression suite from the repository root with:
 
@@ -239,6 +188,7 @@ Run the backend regression suite from the repository root with:
 - [`docs/TECHNICAL_ARCHITECTURE.md`](docs/TECHNICAL_ARCHITECTURE.md) — System architecture, Mermaid sequence diagrams, domain service layers, security, and production roadmap.
 - [`docs/LOCAL_DEMO_SETUP.md`](docs/LOCAL_DEMO_SETUP.md) — Local development setup, environment variables, prototype account configuration, and test instructions.
 - [`docs/DEMO_RUNBOOK.md`](docs/DEMO_RUNBOOK.md) — Step-by-step evaluator walkthrough, role demonstration script, and synthetic verification cases (K01/K07).
+- [`docs/FINAL_SUBMISSION_READINESS.md`](docs/FINAL_SUBMISSION_READINESS.md) — Final submission checklist, verification evidence, demonstration status and remaining blockers.
 - [`docs/phase3_1_kyc.md`](docs/phase3_1_kyc.md) — Smart KYC document workflow, local OCR engine, and verification rules.
 
 ## Layout
