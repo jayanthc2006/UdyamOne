@@ -20,6 +20,8 @@ client = TestClient(app)
 _customer_password_hash = hash_password("SyntheticCustomerPassword1!")
 _other_customer_password_hash = hash_password("SyntheticOtherPassword1!")
 _reviewer_password_hash = hash_password("SyntheticReviewerPassword1!")
+_operations_password_hash = hash_password("SyntheticOperationsPassword1!")
+_partner_password_hash = hash_password("SyntheticPartnerPassword1!")
 
 
 @pytest.fixture(autouse=True)
@@ -33,7 +35,11 @@ def configure_auth(monkeypatch, tmp_path) -> None:
             '{"username":"customer-b","role":"CUSTOMER",'
             f'"password_hash":"{_other_customer_password_hash}","applicant_ids":["APPL-B"]}},'
             '{"username":"reviewer","role":"REVIEWER",'
-            f'"password_hash":"{_reviewer_password_hash}","applicant_ids":[]}}]'
+            f'"password_hash":"{_reviewer_password_hash}","applicant_ids":[]}},'
+            '{"username":"operations","role":"OPERATIONS",'
+            f'"password_hash":"{_operations_password_hash}","applicant_ids":[]}},'
+            '{"username":"partner","role":"PARTNER",'
+            f'"password_hash":"{_partner_password_hash}","applicant_ids":[]}}]'
         ),
     )
     monkeypatch.setattr(kyc_service, "UPLOAD_ROOT", tmp_path)
@@ -260,3 +266,47 @@ def test_malformed_password_hash_configuration_fails_closed(monkeypatch) -> None
 
     with pytest.raises(KycAuthConfigurationError):
         load_kyc_auth_configuration()
+
+
+
+def test_customer_owns_and_other_applicant_kyc_access() -> None:
+    customer_a_token = _login("customer-a", "SyntheticCustomerPassword1!")
+    customer_a_headers = {"Authorization": f"Bearer {customer_a_token}"}
+    customer_b_token = _login("customer-b", "SyntheticOtherPassword1!")
+    customer_b_headers = {"Authorization": f"Bearer {customer_b_token}"}
+
+    own = client.get("/api/v1/kyc/APPL-A", headers=customer_a_headers)
+    other = client.get("/api/v1/kyc/APPL-B", headers=customer_a_headers)
+
+    assert own.status_code == 200
+    assert other.status_code == 403
+
+
+def test_reviewer_can_read_any_applicant_assessment() -> None:
+    reviewer_token = _login("reviewer", "SyntheticReviewerPassword1!")
+    reviewer_headers = {"Authorization": f"Bearer {reviewer_token}"}
+
+    assessment_a = client.get("/api/v1/kyc/APPL-A", headers=reviewer_headers)
+    assessment_b = client.get("/api/v1/kyc/APPL-B", headers=reviewer_headers)
+
+    assert assessment_a.status_code == 200
+    assert assessment_b.status_code == 200
+
+
+def _non_customer_receives_403_on_kyc_read(username: str, password: str) -> None:
+    token = _login(username, password)
+    headers = {"Authorization": f"Bearer {token}"}
+    assessment = client.get("/api/v1/kyc/APPL-A", headers=headers)
+    download = client.get(
+        "/api/v1/kyc/APPL-A/documents/address_proof/file", headers=headers
+    )
+    assert assessment.status_code == 403, f"{username}: assessment {assessment.status_code}"
+    assert download.status_code == 403, f"{username}: download {download.status_code}"
+
+
+def test_operations_receives_403_on_kyc_read_endpoints() -> None:
+    _non_customer_receives_403_on_kyc_read("operations", "SyntheticOperationsPassword1!")
+
+
+def test_partner_receives_403_on_kyc_read_endpoints() -> None:
+    _non_customer_receives_403_on_kyc_read("partner", "SyntheticPartnerPassword1!")

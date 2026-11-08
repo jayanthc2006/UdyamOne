@@ -42,6 +42,7 @@ from app.security.kyc_auth import (
     KycPrincipal,
     get_current_kyc_principal,
     require_applicant_access,
+    require_kyc_read_access,
     require_kyc_role,
 )
 
@@ -70,7 +71,7 @@ def get_kyc_assessment(
     principal: KycPrincipal = Depends(get_current_kyc_principal),
 ) -> KycAssessment:
     """Return document presence and review state, without checking registries."""
-    require_applicant_access(principal, applicant_id)
+    require_kyc_read_access(principal, applicant_id)
     try:
         return get_assessment(applicant_id)
     except KycConfigurationError as error:
@@ -233,7 +234,7 @@ def retrieve_kyc_document(
     principal: KycPrincipal = Depends(get_current_kyc_principal),
 ) -> FileResponse:
     """Download only the selected applicant's locally stored document."""
-    require_applicant_access(principal, applicant_id)
+    require_kyc_read_access(principal, applicant_id)
     try:
         path, content_type = get_document_file(applicant_id, document_type)
     except KycStateError as error:

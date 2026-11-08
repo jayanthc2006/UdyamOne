@@ -1,7 +1,7 @@
 # Security Review — UdyamOne Prototype (Implementation-Backed)
 
 **Team**: PulseForge · Airtel SYNC 2026 · Review date: 8 November 2026
-**Method**: documentation-only read-only inspection of source code, tests and configuration. No intrusive testing, no code changes. Every claim below cites the implementing file and, where applicable, the covering automated test. Where a control is absent, that is stated. This review is not a formal security audit; the manual functional walkthrough of 8 November 2026 covers product flows, not security assurance.
+**Method**: Implementation-backed review of source code, tests and configuration, including the KYC read-authorization remediation documented in Section 8. No intrusive security testing was performed. Every claim below cites the implementing file and, where applicable, the covering automated test.
 
 ---
 
@@ -21,16 +21,28 @@
 
 | Capability | CUSTOMER | REVIEWER | OPERATIONS | PARTNER | Enforcing code | Test evidence |
 |---|---|---|---|---|---|---|
-| Own applicant KYC view/consent/upload/OCR/corrections | ✅ own only | ❌ | ❌ | ❌ | `require_kyc_role(CUSTOMER)` + `require_applicant_access` (`api/kyc.py`) | `test_kyc.py`, `test_kyc_auth.py` |
+| Own applicant KYC view/consent/upload/OCR/corrections | ✅ own only | ❌ | ❌ | ❌ | `require_kyc_read_access` for KYC read; `require_kyc_role(CUSTOMER)` + `require_applicant_access` for consent/upload/OCR/corrections (`api/kyc.py`) | `test_kyc.py`, `test_kyc_auth.py` |
 | Document review, additional-doc requests, finalize | ❌ | ✅ | ❌ | ❌ | `require_kyc_role(REVIEWER)` (`api/kyc.py`) | `test_kyc.py` reviewer tests |
 | Place order, view/cancel own orders | ✅ own only | ❌ | ❌ | ❌ | `api/orders.py` role + ownership checks | `test_orders.py` (incl. cross-applicant 403s) |
 | Operations list/search/detail, assign/reassign, lifecycle transitions incl. simulated activation | ❌ | ❌ | ✅ | ❌ | `api/operations.py` + `TRANSITION_ROLES` matrix (`models/order.py`) | `test_orders.py` (reviewer/ops/partner blocked; assignment tests) |
 | View assigned orders, fulfilment transitions, hand-off to ACTIVATION_PENDING | ❌ | ❌ | ❌ | ✅ assigned-only | `api/partner.py` validates active assignment = session username | `test_partner_cannot_access_unassigned_order`, `test_partner_cannot_access_another_partners_order`, `test_partner_cannot_reassign_orders` |
-| Access KYC documents | ✅ own | ✅ workflow | ❌ | ❌ (no KYC routes exist for partners) | route design + role checks | e2e partner checks |
-| Unauthenticated access | 401 | 401 | 401 | 401 | `get_current_kyc_principal` | `test_orders.py::test_unauthenticated_requests_rejected` |
+| Access KYC documents | ✅ own | ✅ workflow | ❌ | ❌ (no KYC routes exist for partners) | `require_kyc_read_access` on `GET /{applicant_id}` and `GET /{applicant_id}/documents/{document_type}/file` (`api/kyc.py`); rejects OPERATIONS/PARTNER with 403 (`security/kyc_auth.py`) | `test_kyc_auth.py` role-based 403 tests |
 | Invalid state transitions | 409 | 409 | 409 | 409 | `PERMITTED_TRANSITIONS` | `test_invalid_transition_rejected`, terminal-state tests |
 
-Endpoint separation is deliberate and tested: customer `GET /orders/{id}` is CUSTOMER-only (operations/partner use their own endpoints — the Phase 5 integration bug fix), operations/partner endpoints reject other roles (403).
+Endpoint separation is deliberate and tested: applicant onboarding/quote routes are intentionally unauthenticated so the pre-KYC browser flow works (see below). KYC assessment and document routes are then authenticated and role-gated.
+
+| Unauthenticated applicant routes (no session/role dependency) | Endpoint | Pre-KYC behaviour | Data exposure if applicant ID known |
+|---|---|---|---|
+| POST | /api/v1/applicants | Create a new applicant identity + initial recommendation set | N/A (creates new applicant) |
+| PUT | /api/v1/applicants/{applicant_id} | Update the profile and regenerate recommendations | Profile fields (business type, city, employee count, segment, requirements, GSTIN status) are overwritten with the supplied values; recommendations are replaced; existing quote_previews for this applicant are deleted |
+| GET | /api/v1/applicants/{applicant_id} | Reload the saved profile, recommendations and refreshed registry eligibility | Profile fields + latest saved quote/eligibility state |
+| POST | /api/v1/applicants/{applicant_id}/quotes/preview | Compute and persist a quote preview against the saved profile | Same profile + price/quote state as saved preview |
+
+No registered customer session is required to call any of these routes. They exist solely to support the current pre-KYC onboarding flow (a browser can complete onboarding and receive recommendations without consent), and they do not create KYC assessments, perform OCR, or write KYC documents.
+
+Knowing an applicant ID may therefore allow the caller to access, modify or seed pre-KYC profile data on any applicant. This is accepted prototype behaviour: IDs are opaque `APPL-` hex strings, but are **not** an authorization boundary. Opaque IDs reduce enumeration risk. An authenticated applicant ownership check is required before any real customer-data or production use.
+
+- **No session required** on applicant routes; `get_current_kyc_principal` is not applied to them.
 
 ## 3. KYC Document Pipeline Security
 
@@ -59,17 +71,17 @@ Endpoint separation is deliberate and tested: customer `GET /orders/{id}` is CUS
 | No unnecessary PII collection | ✅ | Profile fields limited to business attributes; no payment/biometric collection |
 | Client filenames not retained | ✅ | Generated storage names in `kyc_service.py` |
 | No raw registry duplication | ✅ | Fingerprint + outcome only (`registry_verifications` table) |
-| Downloads restricted by applicant + role | ✅ | `require_applicant_access` on file route |
+| Downloads restricted by applicant + role | ✅ | require_kyc_read_access on the document-download route |
 | Identifier masking in logs/UI | ⚠️ Partial | No logging of identifiers found; but no deliberate masking/truncation layer either — order/applicant IDs appear in full in URL paths and UI |
 | Encryption at rest | ❌ | Not implemented |
 | Automatic retention/deletion | ❌ **absent** | No purge/expiry code exists — stated honestly in `PRIVACY_AND_SECURITY_NOTE.md` |
 
 ## 7. Test-Coverage Backing (security-relevant)
 
-- 201 backend tests passing (pytest), including: four-role authentication; expired/malformed/tampered session rejection; unauthenticated rejection across order endpoints; cross-applicant order access/cancel denial; partner assignment-boundary denials; reviewer-only KYC review; consent-gated processing; registry outcome persistence; duplicate-order and invalid-transition rejection; terminal-state immutability.
+- 205 backend tests passing (pytest), including: four-role authentication; expired/malformed/tampered session rejection; unauthenticated rejection across order endpoints; cross-applicant order access/cancel denial; partner assignment-boundary denials; reviewer-only KYC review; consent-gated processing; registry outcome persistence; duplicate-order and invalid-transition rejection; terminal-state immutability; **KYC read authorization: CUSTOMER own/other isolation, REVIEWER read access, OPERATIONS/PARTNER 403 on assessment and document-download routes** (`test_kyc_auth.py`).
 - 29/29 isolated API E2E checks (previously verified run, not rerun in this review) covering the full lifecycle and negative authorization paths.
 
-## 8. Findings & Recommendations (no code changed in this review)
+## 8. Findings & Recommendations
 
 1. **No server-side session revocation** — sign-out is client-side only. (Production: revocation list / short TTL + refresh.)
 2. **No automatic document retention/deletion** — indefinite local retention. (Production: configurable retention + approved deletion workflow; audit records kept separately.)
@@ -78,4 +90,4 @@ Endpoint separation is deliberate and tested: customer `GET /orders/{id}` is CUS
 5. **No encryption at rest** for documents or SQLite. (Production: encrypted object storage + managed DB.)
 6. **No centralised audit logging** — domain events exist in DB (order events), but no security audit trail (logins, denials). (Production: SIEM-feeding audit log with field masking.)
 7. **Reviewer scope is global** — reviewers can access any applicant by workflow design; acceptable for prototype, should be scoped in production RBAC.
-8. **No security defects requiring immediate code change were identified** within prototype scope; all authorization tests pass as designed.
+8. **KYC read authorization hardened** — `GET /api/v1/kyc/{applicant_id}` and `GET /api/v1/kyc/{applicant_id}/documents/{document_type}/file` now use a shared `require_kyc_read_access` guard (`backend/app/security/kyc_auth.py`) that allows CUSTOMER (own applicant) and REVIEWER, and rejects OPERATIONS and PARTNER with HTTP 403. Previously these read endpoints only enforced CUSTOMER ownership, so OPERATIONS/PARTNER could read KYC records. Covered by regression tests in `backend/tests/test_kyc_auth.py` (CUSTOMER own/other isolation, REVIEWER read access, OPERATIONS/PARTNER 403 on both endpoints).

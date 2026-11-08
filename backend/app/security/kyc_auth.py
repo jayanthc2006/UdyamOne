@@ -286,6 +286,22 @@ def require_applicant_access(principal: KycPrincipal, applicant_id: str) -> None
         )
 
 
+def require_kyc_read_access(principal: KycPrincipal, applicant_id: str) -> None:
+    """Route-level guard for KYC read endpoints (assessment + document download).
+
+    Allows CUSTOMER (own applicant only) and REVIEWER (any applicant, workflow
+    need). Rejects OPERATIONS and PARTNER with HTTP 403, since neither role is
+    part of the KYC read workflow.
+    """
+    if principal.role in ("OPERATIONS", "PARTNER"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"The {principal.role.lower()} role is not authorized to read KYC records.",
+        )
+    # CUSTOMER ownership check is retained for the customer read path.
+    require_applicant_access(principal, applicant_id)
+
+
 def current_auth_configuration() -> KycAuthConfiguration:
     """Return config for the auth endpoint, using an HTTP error when misconfigured."""
     try:
