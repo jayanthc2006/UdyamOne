@@ -10,6 +10,7 @@ import {
 
 import { SiteFooter, SiteHeader } from "@/components/landing";
 import { getCurrentApplicantId, saveCurrentApplicantId } from "@/lib/applicant-session";
+import { isRoleAuthorisedFor, workspaceDestinationFor } from "@/lib/role-navigation";
 import {
   type KycAssessment,
   type KycDocumentState,
@@ -362,13 +363,15 @@ export default function KycPage() {
   useEffect(() => {
     const requestedApplicantId = new URLSearchParams(window.location.search).get("applicant");
     const savedApplicantId = requestedApplicantId || getCurrentApplicantId();
-    if (requestedApplicantId && requestedApplicantId !== "K05") {
-      saveCurrentApplicantId(requestedApplicantId);
+    const rawId = savedApplicantId;
+    const normalizedId = rawId ? rawId.trim().toUpperCase() : null;
+    if (requestedApplicantId && normalizedId && normalizedId !== "K05") {
+      saveCurrentApplicantId(normalizedId);
     }
     const timer = window.setTimeout(() => {
-      setApplicantId(savedApplicantId);
+      setApplicantId(normalizedId);
       setIdentityReady(true);
-      setLoading(Boolean(savedApplicantId));
+      setLoading(Boolean(normalizedId));
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -516,6 +519,18 @@ export default function KycPage() {
       });
       setPassword("");
       setNotice(`Signed in as ${session.role.toLowerCase()}.`);
+      // Preserve an intended destination only when this role is authorised for
+      // it; otherwise send the role to its own workspace.
+      const requested = new URLSearchParams(window.location.search).get("next");
+      if (requested && requested.startsWith("/") && !requested.startsWith("//")
+        && isRoleAuthorisedFor(session.role, requested)) {
+        window.location.assign(requested);
+      } else {
+        const destination = workspaceDestinationFor(session.role);
+        if (destination && destination !== "/kyc") {
+          window.location.assign(destination);
+        }
+      }
     } catch (loginError) {
       setError(getErrorMessage(loginError));
     } finally {
@@ -531,7 +546,7 @@ export default function KycPage() {
   };
 
   const selectApplicant = (nextApplicantId: string) => {
-    const normalized = nextApplicantId.trim();
+    const normalized = nextApplicantId.trim().toUpperCase();
     if (!normalized) return;
     setApplicantId(normalized);
     setAssessment(null);
@@ -681,13 +696,6 @@ export default function KycPage() {
                 type="button"
               >
                 Open applicant
-              </button>
-              <button
-                className="min-h-10 rounded-lg border border-[#bdc7d3] px-4 text-sm font-semibold text-[#31445e]"
-                onClick={() => selectApplicant("K05")}
-                type="button"
-              >
-                Open competition sample K05
               </button>
             </div>
           </section>

@@ -1,6 +1,14 @@
 # Final Submission Readiness — UdyamOne (Round 1, Airtel SYNC 2026)
 
-**Team:** PulseForge · **Baseline:** `875eb97` (latest pushed commit on `main`) · **Review date:** 8 November 2026
+**Team:** PulseForge · **Baseline:** determined via `git rev-parse HEAD` at review time · **Review date:** 8 November 2026
+
+---
+
+## 0. Manual browser walkthrough status (8 November 2026)
+
+A **core happy-path browser walkthrough was manually performed on 8 November 2026** and is supported by screenshots. Demonstrated: landing page → guided onboarding → recommendations/bundle review → AI advisor (English and Telugu) → estimated pricing and backend quote preview → Smart KYC sign-in → inspection of existing GST/Udyam specimens, OCR values and prior corrections → consent decision reviewed (recorded 6 Nov 2026) → synthetic registry checks (**observed: GSTIN INCONCLUSIVE, Udyam MISMATCH**) → prototype order placed after estimate confirmation → Operations Dashboard assignment to a configured partner → Partner Workspace fulfilment (In Progress → Completed → Activation Pending) → Operations simulated activation → customer verification of Activated status, pricing snapshot, milestones and chronological event history.
+
+**Not newly tested in that walkthrough (remains open):** fresh consent acceptance; fresh document upload + new OCR run; a positive GSTIN/Udyam registry match; Reviewer-role walkthrough; negative authorization scenarios in the browser; all validation/empty/loading/failure states; complete responsive testing. Automated evidence (201 backend tests; 29/29 isolated API E2E previously recorded) is **separate** from this manual walkthrough.
 
 ---
 
@@ -21,7 +29,7 @@ The following results are from previously recorded runs, documented in `docs/PHA
 
 ## 2. Manual Browser Testing Plan
 
-**Status: NOT PERFORMED.** No human browser walkthrough has been recorded in the available artifacts. Automated backend and isolated QA results do not establish that the complete frontend journey has been manually verified.
+**Status: core happy-path manually verified (see section 0, 8 November 2026).** The remaining checklist steps below cover the flows not exercised in that walkthrough (fresh consent/upload/OCR, positive registry match, Reviewer role, negative authorization scenarios, error/empty states, responsive sizes). Every step maps to verified backend behaviour (test file noted), so any frontend mismatch is easy to localize.
 
 The plan below is ready for execution. Estimated execution time is approximately 20 minutes, excluding setup and troubleshooting. Each step maps to backend behaviour or an identified frontend check.
 
@@ -86,28 +94,29 @@ These expectations should be verified in the running application, not assumed fr
 | B2 | Optional AI advisor requires LLM credentials and returns HTTP 503 when the provider is not configured. | Advisor demonstration may show an error instead of a conversation. | Configure the provider key locally, or demonstrate the product with the advisor explicitly disclosed as optional and disabled in this environment. | **Decision required** |
 | B3 | Earlier browser automation encountered a development-server origin restriction. `allowedDevOrigins` was added to `frontend/next.config.ts` during the earlier development work. | Development-server preview or automation may encounter an origin issue if the setting is absent or incorrect. | Confirm the setting in the current file before using the development server. A production-mode run using `npm run build` followed by `npm start` is an alternative. | **Verify if using dev server** |
 | B4 | OCR depends on Windows OCR language capability and runtime availability for the user running the application. | OCR may fail on the demo machine even if it worked elsewhere. | Verify local OCR once with a specimen before recording. The backend should report failure honestly rather than silently substituting a remote provider. | **Verify once** |
-| B5 | The 14-step browser walkthrough has not been performed as a recorded manual test. | UI-level defects may remain despite successful API tests. | Execute the browser plan in section 2 and record the result. | **Open — main outstanding item** |
+| B5 | The broader 14-step plan (negative paths, fresh upload/OCR, positive registry match, Reviewer role, responsive sizes) has not been executed as a recorded checklist. | Coverage gaps may remain despite the happy-path walkthrough. | Work through the section 2 checklist, prioritising role/negative flows. | **Open — coverage item, not a defect** |
 | P3 (accepted) | Header navigation can update approximately two seconds after sign-out due to polling; synthetic registries, estimated pricing and simulated activation are prototype limitations. | Minor presentation friction and scope limitations. | Disclose prototype boundaries and follow the demo runbook. | Accepted with disclosure |
 
-**Code-review qualification:** The earlier Phase 5 review recorded the presence of negative-path handling, user-readable error responses and empty/loading/error states in the frontend. This is not a substitute for manual browser verification. No formal end-to-end human walkthrough has been completed.
+**Code-review qualification:** The earlier Phase 5 review recorded the presence of negative-path handling, user-readable error responses and empty/loading/error states in the frontend. Combined with the manual walkthrough (section 0), this does not constitute exhaustive functional testing; the untested items listed there remain open.
+
+During the walkthrough, in-page navigation defects were observed on `/get-started` (Bundle options / Compare bundles not reliably scrolling, Edit profile silently swapping views). These were diagnosed (toggle-only buttons with no scroll targets; no sticky-header offsets) and fixed in `frontend/components/recommendation-results.tsx` and `frontend/app/page.tsx`/`get-started/page.tsx` (section refs + `scrollIntoView`, `scroll-mt-24` offsets, focus-on-edit). The landing-page anchors were verified to have matching section IDs. Browser re-verification of the corrected scrolling is still recommended on the demo machine.
 
 ---
 
 ## 4. Go/No-Go Recommendation
 
-**GO — conditional for recording and final submission preparation.**
+**GO — the core journey has been manually demonstrated end-to-end (section 0); remaining items are preparation and coverage tasks, not product defects.**
 
-The previously recorded engineering baseline includes 201 passing backend tests, clean frontend lint, a successful Next.js production build and 29/29 isolated QA E2E checks. The repository also contains security, architecture, business-impact, competitive-analysis and QA documentation.
+The engineering baseline (201 backend tests, clean lint, successful production build, 29/29 isolated QA E2E) plus the completed manual happy-path walkthrough support proceeding with recording and submission.
 
-These recorded results support proceeding with final preparation, but they do not establish that the current demo machine and browser journey are ready.
+### Conditions before recording the final demo
 
-### Conditions before recording the demo
+1. **Confirm all four demo accounts and the signing secret on the demo machine**, and re-run the role/authorization steps of the section 2 plan (not fully covered by the walkthrough).
+2. **Decide the AI advisor demonstration approach.** The advisor was demonstrated working (EN/TE); confirm the provider configuration on the recording machine.
+3. **Verify OCR on the actual recording machine** — the walkthrough inspected existing OCR results; a fresh upload/OCR run has not been tested.
+4. **Browser re-verify the corrected in-page scrolling** (Bundle options / Compare bundles / Edit profile / landing anchors) at desktop and mobile widths.
+5. **Check `git status` and demo configuration** (frontend origin config, environment variables without exposing values, startup path) before recording.
 
-1. **Provision all four demo accounts and the signing secret.** Execute the manual browser plan in section 2, especially the role and authorization flows.
-2. **Decide the AI advisor demonstration approach.** Either configure the LLM provider locally or present the advisor accurately as an optional feature disabled in this environment.
-3. **Verify OCR on the actual demo machine.** Confirm the required Windows OCR language/runtime availability using a specimen document.
-4. **Confirm the current working tree and demo configuration.** Check `git status`, frontend origin configuration, environment variables without exposing their values, and the actual application startup path.
-
-After these conditions are addressed, proceed with the seven-slide deck and genuine application screenshots using `docs/DEMO_SCREENSHOT_PLAN.md`.
+After these are addressed, capture screenshots per `docs/DEMO_SCREENSHOT_PLAN.md` and finalise the seven-slide deck.
 
 **Final disclosure:** UdyamOne is a competition prototype. Registry verification uses synthetic datasets, pricing is estimated and non-binding, activation is simulated, and actual telecom provisioning and payment processing are not implemented.

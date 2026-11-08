@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import { Icon } from "@/components/landing";
@@ -148,6 +148,8 @@ export function RecommendationResults({
   const [quote, setQuote] = useState<QuoteResponse | null>(initialQuote);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
+  const bundleSectionRef = useRef<HTMLDivElement | null>(null);
+  const comparisonSectionRef = useRef<HTMLDivElement | null>(null);
 
   const selectedBundle = recommendation.bundles.find(
     (bundle) => bundle.bundle_id === selectedBundleId,
@@ -160,6 +162,17 @@ export function RecommendationResults({
     setQuantities(Object.fromEntries(bundle.products.map((product) => [product.product_id, product.quantity])));
     setQuote(null);
     setQuoteError(null);
+  };
+
+  // Scroll to a section after the view swaps, keeping the sticky header clear.
+  // The target elements carry scroll-margin-top; the browser handles the offset.
+  const showView = (comparison: boolean, target: "bundles" | "comparison") => {
+    setShowComparison(comparison);
+    // The other view unmounts, so always defer to the next frame.
+    window.requestAnimationFrame(() => {
+      const node = target === "bundles" ? bundleSectionRef.current : comparisonSectionRef.current;
+      node?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   };
 
   const handleAdvisorUpdate = async (
@@ -237,8 +250,8 @@ export function RecommendationResults({
           <h1 className="mt-3 text-3xl font-semibold tracking-[-0.05em] sm:text-4xl">Catalogue-backed choices for your business.</h1>
           <p className="mt-4 max-w-3xl text-base leading-7 text-[#657287]">Every option is based on the current product catalogue, your profile and the availability rules checked by UdyamOne.</p>
           <div className="mt-6 flex flex-wrap gap-3">
-            <button aria-pressed={!showComparison} className={`rounded-lg px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835] ${!showComparison ? "bg-[#10223e] text-white" : "border border-[#d8dee7] bg-white text-[#40536b]"}`} onClick={() => setShowComparison(false)} type="button">Bundle options</button>
-            <button aria-pressed={showComparison} className={`rounded-lg px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835] ${showComparison ? "bg-[#10223e] text-white" : "border border-[#d8dee7] bg-white text-[#40536b]"}`} onClick={() => setShowComparison(true)} type="button">Compare bundles</button>
+            <button aria-pressed={!showComparison} className={`rounded-lg px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835] ${!showComparison ? "bg-[#10223e] text-white" : "border border-[#d8dee7] bg-white text-[#40536b]"}`} onClick={() => showView(false, "bundles")} type="button">Bundle options</button>
+            <button aria-pressed={showComparison} className={`rounded-lg px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835] ${showComparison ? "bg-[#10223e] text-white" : "border border-[#d8dee7] bg-white text-[#40536b]"}`} onClick={() => showView(true, "comparison")} type="button">Compare bundles</button>
             <button className="rounded-lg px-4 py-2 text-sm font-semibold text-[#c93835] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835]" onClick={onEdit} type="button">Edit business profile</button>
             <Link className="rounded-lg border border-[#d8dee7] bg-white px-4 py-2 text-sm font-semibold text-[#31445e] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835]" href={`/kyc?applicant=${encodeURIComponent(applicantId)}`}>Continue to Smart KYC</Link>
           </div>
@@ -251,13 +264,13 @@ export function RecommendationResults({
         {recommendation.limitations.map((limitation) => <p className="mb-3 text-sm text-[#7a662d]" key={limitation}>{limitation}</p>)}
 
         {showComparison ? (
-          <div className="overflow-x-auto rounded-2xl border border-[#e3e8ee] bg-white">
+          <div ref={comparisonSectionRef} id="bundle-comparison" className="scroll-mt-24 overflow-x-auto rounded-2xl border border-[#e3e8ee] bg-white">
             <table className="min-w-[720px] w-full text-left text-sm">
               <thead className="bg-[#f7f8fa] text-xs uppercase tracking-[0.1em] text-[#7b8797]"><tr><th className="px-5 py-4">Bundle</th><th className="px-5 py-4">Products</th><th className="px-5 py-4">Monthly</th><th className="px-5 py-4">One-time</th><th className="px-5 py-4">Action</th></tr></thead>
               <tbody>{recommendation.bundles.map((bundle) => <tr className="border-t border-[#edf0f3]" key={bundle.bundle_id}><td className="px-5 py-5 font-semibold text-[#243852]">{bundle.display_name}</td><td className="px-5 py-5 text-[#647287]">{bundle.products.map((product) => product.product_name).join(", ")}</td><td className="px-5 py-5 font-medium text-[#243852]">{formatInr(bundle.monthly_min_inr)} – {formatInr(bundle.monthly_max_inr)}</td><td className="px-5 py-5 text-[#647287]">{formatInr(bundle.one_time_setup_inr)}</td><td className="px-5 py-5"><button className="font-semibold text-[#c93835] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835]" onClick={() => { selectBundle(bundle); setShowComparison(false); }} type="button">Select</button></td></tr>)}</tbody>
             </table>
           </div>
-        ) : <div className="grid gap-5 lg:grid-cols-3">{recommendation.bundles.map((bundle) => <BundleCard bundle={bundle} key={bundle.bundle_id} onSelect={() => selectBundle(bundle)} selected={bundle.bundle_id === selectedBundleId} />)}</div>}
+        ) : <div ref={bundleSectionRef} id="bundle-options" className="scroll-mt-24 grid gap-5 lg:grid-cols-3">{recommendation.bundles.map((bundle) => <BundleCard bundle={bundle} key={bundle.bundle_id} onSelect={() => selectBundle(bundle)} selected={bundle.bundle_id === selectedBundleId} />)}</div>}
 
         {selectedBundle ? <section className="mt-10 grid gap-7 lg:grid-cols-[1.05fr_0.95fr]">
           <div className="rounded-2xl border border-[#e3e8ee] bg-white p-5 sm:p-7">

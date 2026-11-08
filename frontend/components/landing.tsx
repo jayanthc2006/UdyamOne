@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import {
   type KycSessionIdentity,
@@ -106,6 +107,7 @@ export function SiteHeader() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [principal, setPrincipal] = useState<KycSessionIdentity | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     let active = true;
@@ -150,6 +152,9 @@ export function SiteHeader() {
       }
     };
     window.addEventListener("storage", onStorage);
+    // Re-check quickly so login/logout in the same tab updates the header
+    // without a manual refresh. Only performs a network call when the stored
+    // token presence differs from the rendered state.
     const pollTimer = window.setInterval(() => {
       const token = window.sessionStorage.getItem(KYC_SESSION_KEY);
       if (!token && principal) {
@@ -163,7 +168,7 @@ export function SiteHeader() {
             setPrincipal(null);
           });
       }
-    }, 2000);
+    }, 500);
     return () => {
       window.removeEventListener("storage", onStorage);
       window.clearInterval(pollTimer);
@@ -182,32 +187,117 @@ export function SiteHeader() {
 
   const closeMobileMenu = () => setIsMobileMenuOpen(false);
 
+  // Public sign-in dropdown (logged-out visitors only): navigation entry
+  // points to the existing per-workspace sign-in forms. Selecting an option is
+  // navigation only — the actual role is determined by the backend session.
+  const [isSignInOpen, setIsSignInOpen] = useState(false);
+  const signInRef = useRef<HTMLDivElement | null>(null);
+  const signInButtonRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (!isSignInOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!signInRef.current?.contains(event.target as Node)) setIsSignInOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsSignInOpen(false);
+        signInButtonRef.current?.focus();
+      }
+    };
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isSignInOpen]);
+
+  // Role-authorised workspace link, shown only to the matching role.
+  const workspaceLink =
+    principal?.role === "CUSTOMER" ? { href: "/orders", label: "My Orders" }
+    : principal?.role === "OPERATIONS" ? { href: "/operations", label: "Operations Dashboard" }
+    : principal?.role === "PARTNER" ? { href: "/partner", label: "Partner Workspace" }
+    : principal?.role === "REVIEWER" ? { href: "/kyc", label: "KYC / Review" }
+    : null;
+  const isCurrentWorkspace = Boolean(workspaceLink && pathname?.startsWith(workspaceLink.href));
+  const workspaceLinkClass = (extra: string) =>
+    `${extra} ${isCurrentWorkspace
+      ? "font-semibold text-[#c93835]"
+      : "font-semibold text-[#10223e] hover:text-[#c93835]"}`;
+
   return (
-    <header className="border-b border-[#e9edf1]/80 bg-[#fcfcfb]/95 backdrop-blur">
-      <div className="mx-auto flex h-[74px] max-w-7xl items-center justify-between px-5 sm:px-8 lg:px-10">
+    <header className="relative z-50 border-b border-[#e9edf1]/80 bg-[#fcfcfb]/95 backdrop-blur">
+      <div className="relative mx-auto flex h-[74px] max-w-7xl items-center justify-between px-5 sm:px-8 lg:px-10">
         <Wordmark />
         <nav aria-label="Primary navigation" className="hidden items-center gap-7 lg:flex">
           <Link className="nav-link" href="/#solutions">Solutions</Link>
           <Link className="nav-link" href="/#how-it-works">How it works</Link>
           <Link className="nav-link" href="/#business-services">Business services</Link>
-          {principal?.role === "CUSTOMER" ? (
-            <Link className="nav-link font-semibold text-[#10223e]" href="/orders">My Orders</Link>
-          ) : null}
-          {principal?.role === "OPERATIONS" ? (
-            <Link className="nav-link font-semibold text-[#10223e]" href="/operations">Operations Dashboard</Link>
-          ) : null}
-          {principal?.role === "PARTNER" ? (
-            <Link className="nav-link font-semibold text-[#10223e]" href="/partner">Partner Workspace</Link>
+          {workspaceLink ? (
+            <Link aria-current={isCurrentWorkspace ? "page" : undefined} className={workspaceLinkClass("nav-link")} href={workspaceLink.href}>{workspaceLink.label}</Link>
           ) : null}
         </nav>
         <div className="flex items-center gap-3 sm:gap-5">
-          <Link
-            aria-label="Smart KYC prototype sign-in"
-            className="hidden text-sm font-medium text-[#31445e] hover:text-[#c93835] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835] sm:inline"
-            href="/kyc"
-          >
-            Smart KYC
-          </Link>
+          {authReady && !principal ? (
+            <div ref={signInRef} className="relative">
+              <button
+                aria-controls="signin-dropdown"
+                aria-expanded={isSignInOpen}
+                aria-haspopup="menu"
+                className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-[#d8dee7] bg-white px-3.5 text-sm font-semibold text-[#31445e] transition hover:bg-[#f7f9fb] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835]"
+                id="signin-button"
+                onClick={() => setIsSignInOpen((open) => !open)}
+                ref={signInButtonRef}
+                type="button"
+              >
+                Sign in
+                <span aria-hidden="true" className={`text-[10px] transition-transform ${isSignInOpen ? "rotate-180" : ""}`}>▾</span>
+              </button>
+              {isSignInOpen ? (
+                <div
+                  aria-labelledby="signin-button"
+                  className="absolute right-0 top-[calc(100%+8px)] z-50 w-64 overflow-hidden rounded-xl border border-[#dfe5eb] bg-white p-1.5 shadow-[0_16px_40px_rgba(16,34,62,0.14)]"
+                  id="signin-dropdown"
+                  role="menu"
+                >
+                  <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8b96a5]">Choose your workspace</p>
+                  {[
+                    { href: "/orders", label: "Customer Sign in", hint: "Onboarding, quotes & orders" },
+                    { href: "/operations", label: "Operations Sign in", hint: "Assign partners & track fulfilment" },
+                    { href: "/partner", label: "Partner Sign in", hint: "Assigned fulfilment work" },
+                    { href: "/kyc", label: "Reviewer / KYC Sign in", hint: "Document review" },
+                  ].map((item) => (
+                    <Link
+                      className="block rounded-lg px-3 py-2.5 text-sm font-semibold text-[#31445e] transition hover:bg-[#f7f9fb] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#c93835]"
+                      href={item.href}
+                      key={item.href}
+                      onClick={() => setIsSignInOpen(false)}
+                      role="menuitem"
+                    >
+                      {item.label}
+                      <span className="mt-0.5 block text-xs font-normal text-[#7c8798]">{item.hint}</span>
+                    </Link>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {principal ? (
+            <Link
+              className="hidden text-sm font-medium text-[#31445e] hover:text-[#c93835] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835] sm:inline"
+              href="/kyc"
+            >
+              Smart KYC
+            </Link>
+          ) : (
+            <Link
+              aria-label="Smart KYC prototype sign-in"
+              className="hidden text-sm font-medium text-[#31445e] hover:text-[#c93835] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c93835] sm:inline"
+              href="/kyc"
+            >
+              Smart KYC
+            </Link>
+          )}
           <Link
             className="inline-flex items-center justify-center rounded-lg bg-[#c93835] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(201,56,53,0.2)] transition hover:bg-[#b12d2b] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#10223e] sm:px-5"
             href="/get-started"
@@ -239,15 +329,16 @@ export function SiteHeader() {
           <Link className="nav-link rounded-lg px-3 py-3 hover:bg-white" href="/#solutions" onClick={closeMobileMenu}>Solutions</Link>
           <Link className="nav-link rounded-lg px-3 py-3 hover:bg-white" href="/#how-it-works" onClick={closeMobileMenu}>How it works</Link>
           <Link className="nav-link rounded-lg px-3 py-3 hover:bg-white" href="/#business-services" onClick={closeMobileMenu}>Business services</Link>
-          <Link className="nav-link rounded-lg px-3 py-3 hover:bg-white" href="/kyc" onClick={closeMobileMenu}>Smart KYC prototype</Link>
-          {principal?.role === "CUSTOMER" ? (
-            <Link className="nav-link rounded-lg px-3 py-3 font-semibold text-[#10223e] hover:bg-white" href="/orders" onClick={closeMobileMenu}>My Orders</Link>
+          {authReady && !principal ? (
+            <>
+              <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8b96a5]">Sign in to a workspace</p>
+              {[{ href: "/orders", label: "Customer Sign in" }, { href: "/operations", label: "Operations Sign in" }, { href: "/partner", label: "Partner Sign in" }, { href: "/kyc", label: "Reviewer / KYC Sign in" }].map((item) => (
+                <Link className="nav-link rounded-lg px-3 py-2.5 hover:bg-white" href={item.href} key={item.href} onClick={closeMobileMenu}>{item.label}</Link>
+              ))}
+            </>
           ) : null}
-          {principal?.role === "OPERATIONS" ? (
-            <Link className="nav-link rounded-lg px-3 py-3 font-semibold text-[#10223e] hover:bg-white" href="/operations" onClick={closeMobileMenu}>Operations Dashboard</Link>
-          ) : null}
-          {principal?.role === "PARTNER" ? (
-            <Link className="nav-link rounded-lg px-3 py-3 font-semibold text-[#10223e] hover:bg-white" href="/partner" onClick={closeMobileMenu}>Partner Workspace</Link>
+          {workspaceLink ? (
+            <Link aria-current={isCurrentWorkspace ? "page" : undefined} className={workspaceLinkClass("nav-link rounded-lg px-3 py-3 hover:bg-white")} href={workspaceLink.href} onClick={closeMobileMenu}>{workspaceLink.label}</Link>
           ) : null}
         </div>
       </nav>

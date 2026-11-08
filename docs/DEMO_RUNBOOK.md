@@ -26,7 +26,7 @@ Before starting a live evaluation or recording a demonstration video, ensure the
 ## 2. End-to-End Live Walkthrough Script
 
 ### Step 1: MSME Discovery & Guided Business Profile
-1. Navigate to [http://127.0.0.1:3000](http://127.0.0.1:3000). Highlight the clean, consumer-grade Airtel-branded landing page.
+1. Navigate to [http://127.0.0.1:3000](http://127.0.0.1:3000). Highlight the UdyamOne landing page and its guided MSME onboarding experience.
 2. Click **Get started** (navigates to `/get-started`).
 3. Fill in business attributes:
    - **Business Name**: `PulseForge Retail Enterprises`
@@ -152,7 +152,7 @@ When demonstrating Smart KYC and registry verification with specimen data from `
 - **Synthetic Registry Status in `mock_gstin_registry.csv`**: Record exists but has `status = CANCELLED`.
 - **Expected Outcome**: GSTIN verification reports `MISMATCH` (*"Registry record is not active (CANCELLED)"*).
 - **Udyam Specimen**: Document omitted or missing valid registration number. Reports `MISMATCH` or `UNAVAILABLE`.
-- **Demonstration Value**: Proves that UdyamOne correctly rejects cancelled GSTINs and enforces compliance gates.
+- **Demonstration Value**: This is a prototype matching exercise against a synthetic cancelled GSTIN record — it shows that UdyamOne surfaces registry status mismatches; it is not a statutory compliance determination.
 
 ### B. Applicant K07 (Positive Verification Demonstration)
 - **Business Profile**: Neelgiri Physio Clinic (Sole Proprietorship, Delhi).
@@ -170,7 +170,15 @@ When demonstrating Smart KYC and registry verification with specimen data from `
     - Local OCR on the specimen image may exhibit character ambiguity on the 12th position (reading letter `I` vs. numeral `1` or extracting legal name as `Neha Banerjee (Prop. Shri Physio Clinic)` due to font rendering).
     - In Smart KYC demonstrations, when the user corrects any OCR character ambiguity or legal name variance via the UI form (`PATCH /corrections`), the adjustment is saved with `correction_applied = true`.
     - The subsequent registry check runs against the corrected identifier and names, cleanly reporting `VERIFIED`.
-- **Important Disclosure**: K07 reflects Neha Banerjee's Neelgiri Physio Clinic in Delhi across both the specimen images and the synthetic registry CSVs. The system demonstrates genuine Udyam verification (matching city `Delhi`) and the **auditability of human-in-the-loop manual corrections** for OCR ambiguities on GSTIN and legal name fields.
+- **Important Disclosure**: K07 reflects Neha Banerjee's Neelgiri Physio Clinic in Delhi across both the specimen images and the synthetic registry CSVs. The system demonstrates successful matching against the supplied synthetic Udyam registry (matching city `Delhi`) and the **auditability of human-in-the-loop manual corrections** for OCR ambiguities on GSTIN and legal name fields. A synthetic registry match is not official government verification.
+
+---
+
+## 2a. Manual walkthrough record (8 November 2026)
+
+The core customer → operations → partner → customer flow was **manually demonstrated end-to-end on 8 November 2026** in a real browser (supported by screenshots): landing → onboarding → recommendations/bundles → AI advisor (EN/TE) → quote → KYC inspection (existing specimens, OCR values, prior corrections, consent record) → registry checks (observed GSTIN INCONCLUSIVE / Udyam MISMATCH) → order placement → Operations assignment → Partner fulfilment (In Progress → Completed → Activation Pending) → Operations simulated activation → customer verification of Activated status, snapshot, milestones and event history.
+
+This is **human-operated testing**, distinct from automated headless browser testing (which remains out of scope). Not covered in that walkthrough: fresh consent/upload/OCR runs, a positive registry match, the Reviewer role, negative authorization scenarios in the browser, all error/empty/loading states, and full responsive testing.
 
 ---
 
@@ -193,4 +201,4 @@ Remove-Item backend\data\applicants.sqlite3 -Force -ErrorAction SilentlyContinue
 1. **Synthetic Registries**: GSTIN and Udyam checks validate against competition mock CSVs. No real government portals are queried.
 2. **Prototype Quotations**: Quotations are non-binding estimates. No payment processing, gateways, or commercial billing accounts are provisioned.
 3. **Simulated Activation**: Activation transitions within the software state machine. No physical telecom provisioning or network element configuration occurs.
-4. **Browser Testing Out of Scope**: Formal quality gates rely on automated backend pytest suites (201 tests), previously verified isolated API E2E scripts (29/29 checks), frontend ESLint, and Next.js production builds. Headless browser automation was explicitly not executed.
+4. **Browser Testing Out of Scope (automation)**: Formal automated quality gates rely on backend pytest suites (201 tests), previously verified isolated API E2E scripts (29/29 checks), frontend ESLint, and Next.js production builds. Headless browser automation was not executed. Separately, a **human-operated core walkthrough was completed on 8 November 2026** (see §2a); its coverage limits are listed there.

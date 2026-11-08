@@ -46,7 +46,7 @@ Phase 5 was implemented natively within the existing FastAPI backend, SQLite per
 ### B. Immutable Pricing & Product Snapshot
 When an order is placed, an authoritative `OrderSnapshot` is generated and serialized as JSON into the `orders.snapshot_json` column.
 - **Captured Attributes**: `snapshot_version` (v1), `quote_id`, full `line_items` array (product names, quantities, unit prices, monthly subtotals, one-time setup subtotals, minimum contract months), aggregate `total_monthly_min_inr`, `total_monthly_max_inr`, `total_one_time_setup_inr`, `quote_created_at`, and the prototype commercial disclaimer.
-- **Immutability Guarantee**: Pydantic models are frozen (`model_config = ConfigDict(frozen=True)`). Once written to SQLite, subsequent applicant profile edits, catalogue changes, or new quote generations never alter the persisted order record.
+- **Immutability guarantee (application-level)**: the Pydantic snapshot models are frozen (`model_config = ConfigDict(frozen=True)`) and no application code path ever rewrites `snapshot_json` after creation — subsequent applicant profile edits, catalogue changes, or new quote generations never alter the persisted order record through the application. This is an application-level protection, not a cryptographic one: the underlying SQLite database file remains an ordinary, administrator-modifiable store, and no tamper-evidence or database-level immutability is claimed.
 
 ### C. State Machine & Lifecycle Transitions
 The backend enforces a deterministic finite state machine defined in `backend/app/models/order.py`:
@@ -114,7 +114,7 @@ ORDER_PLACED ───────────► ASSIGNED ───────
 
 ### F. Simulated Activation
 - Triggered by Operations when an order reaches `ACTIVATION_PENDING`.
-- Records operator identity, timestamp, and simulated activation metadata in the append-only event log.
+- Records operator identity, timestamp, and simulated activation metadata in the **application-level append-only lifecycle history** (the `order_events` table is only ever inserted to by application code; this is not a tamper-proof or independently certified audit system, and the underlying database remains administrator-modifiable).
 - Strictly simulated for the competition prototype; explicitly communicates that no real telecom network provisioning or OSS/BSS integration has occurred.
 
 ### G. Customer Order Tracking (`/orders`)
@@ -202,7 +202,7 @@ CREATE INDEX IF NOT EXISTS idx_assignments_partner ON order_assignments(partner_
 | **Session Security** | **PASS** | Verified PBKDF2-SHA256 password hashing, HMAC-SHA256 token verification, expiry checks, and rejection of tampered tokens. |
 | **Frontend Linting** | **PASS** | ESLint returned 0 errors and 0 warnings across all Next.js pages and components. |
 | **Frontend Production Build** | **PASS** | `npm run build` compiled all 7 routes (`/`, `/get-started`, `/kyc`, `/orders`, `/operations`, `/partner`, `/_not-found`) cleanly without errors. |
-| **Headless Browser Walkthrough** | **NOT TESTED** | Explicitly out of scope per instruction. Headless browser automation was not executed; quality gates rely on automated backend, API integration, and frontend build checks. |
+| **Headless Browser Walkthrough** | **NOT TESTED** | Explicitly out of scope per instruction. Headless browser automation was not executed; quality gates rely on automated backend, API integration, and frontend build checks. Separately, a **human-operated core end-to-end browser walkthrough was subsequently completed on 8 November 2026** (landing → onboarding → advisor → quote → KYC inspection → registry checks (GSTIN INCONCLUSIVE / Udyam MISMATCH observed) → order → operations assignment → partner fulfilment → simulated activation → customer tracking). Its scope and remaining limitations are recorded in `docs/FINAL_SUBMISSION_READINESS.md` §0. |
 
 ---
 

@@ -94,14 +94,14 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-5 py-20 sm:px-8 lg:px-10 lg:py-28" id="solutions">
+      <section className="scroll-mt-24 mx-auto max-w-7xl px-5 py-20 sm:px-8 lg:px-10 lg:py-28" id="solutions">
         <SectionHeading eyebrow="Business solutions" title="The essential services behind better business." description="From getting connected to staying secure, UdyamOne brings together the services MSMEs need to work with more confidence." />
         <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {solutions.map((solution) => <SolutionCard {...solution} key={solution.title} />)}
         </div>
       </section>
 
-      <section className="bg-[#f5f7f9] py-20 lg:py-28" id="how-it-works">
+      <section className="scroll-mt-24 bg-[#f5f7f9] py-20 lg:py-28" id="how-it-works">
         <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-10">
           <SectionHeading centered eyebrow="How UdyamOne works" title="A clearer path from business need to business-ready." description="We simplify the decisions that usually slow businesses down—without taking away your control." />
           <div className="relative mt-14 grid gap-8 md:grid-cols-2 lg:grid-cols-4 lg:gap-5">
@@ -117,7 +117,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-7xl gap-12 px-5 py-20 sm:px-8 lg:grid-cols-[0.88fr_1.12fr] lg:items-center lg:gap-20 lg:px-10 lg:py-28" id="business-services">
+      <section className="scroll-mt-24 mx-auto grid max-w-7xl gap-12 px-5 py-20 sm:px-8 lg:grid-cols-[0.88fr_1.12fr] lg:items-center lg:gap-20 lg:px-10 lg:py-28" id="business-services">
         <div>
           <SectionHeading eyebrow="Why UdyamOne" title="Designed to make the next right move feel obvious." description="The journey is intentionally practical: less searching, less uncertainty and a more confident way to build your digital business." />
           <a className="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-[#c93835] transition hover:gap-3" href="#how-it-works">

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { SiteFooter, SiteHeader } from "@/components/landing";
+import { workspaceDestinationFor } from "@/lib/role-navigation";
 import {
   type KycSessionIdentity,
   type OrderRecordData,
@@ -45,6 +46,11 @@ export default function PartnerPage() {
         expires_at: session.expires_at,
       });
       setPassword("");
+      const destination = workspaceDestinationFor(session.role);
+      if (destination && destination !== "/partner") {
+        // Signed in from the Partner page but not authorised for it.
+        window.location.assign(destination);
+      }
     } catch (loginError) {
       setError(getErrorMessage(loginError));
     } finally {

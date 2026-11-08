@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { Icon, SiteFooter, SiteHeader } from "@/components/landing";
 import { RecommendationResults } from "@/components/recommendation-results";
@@ -164,7 +164,11 @@ function FieldLabel({
   return (
     <div className="mb-2">
       <label className="text-sm font-semibold text-[#263952]" htmlFor={htmlFor}>{label}</label>
-      {description ? <p className="mt-1 text-xs leading-5 text-[#778396]">{description}</p> : null}
+      {description ? (
+        <p className="mt-1 text-xs leading-5 text-[#778396]">{description}</p>
+      ) : (
+        <p className="mt-1 h-5 text-xs leading-5 text-[#778396] hidden sm:block" aria-hidden="true" />
+      )}
     </div>
   );
 }
@@ -228,6 +232,18 @@ export default function GetStartedPage() {
   const markTouched = (field: keyof FormValues) => {
     setTouched((current) => ({ ...current, [field]: true }));
     setErrors(validate(values));
+  };
+
+  // Returning to the profile editor should focus the form heading so the edit
+  // intent is visible immediately instead of swapping views silently.
+  const profileHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const editProfile = () => {
+    setRecommendation(null);
+    setRecommendationRequest(null);
+    window.requestAnimationFrame(() => {
+      profileHeadingRef.current?.focus();
+      profileHeadingRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   };
 
   const toggleRequirement = (requirement: Requirement) => {
@@ -321,10 +337,7 @@ export default function GetStartedPage() {
             });
             setLatestQuote(journey.applicant.latest_quote);
           }}
-          onEdit={() => {
-            setRecommendation(null);
-            setRecommendationRequest(null);
-          }}
+          onEdit={editProfile}
           onRetry={() => void requestRecommendations()}
           applicantId={applicantId}
           initialQuote={latestQuote}
@@ -371,7 +384,7 @@ export default function GetStartedPage() {
         <form className="rounded-2xl border border-[#e4e9ee] bg-white p-5 shadow-[0_12px_34px_rgba(16,34,62,0.05)] sm:p-8" noValidate onSubmit={handleSubmit}>
           <div className="flex items-start justify-between gap-4 border-b border-[#edf0f3] pb-6">
             <div>
-              <h2 className="text-xl font-semibold tracking-[-0.03em] text-[#10223e]">Business profile</h2>
+              <h2 className="text-xl font-semibold tracking-[-0.03em] text-[#10223e] scroll-mt-24 outline-none focus-visible:ring-2 focus-visible:ring-[#c93835]" id="business-profile" ref={profileHeadingRef} tabIndex={-1}>Business profile</h2>
               <p className="mt-1 text-sm leading-6 text-[#6d798b]">All fields are required unless noted.</p>
             </div>
             <span className="rounded-full bg-[#fdebea] px-3 py-1.5 text-xs font-semibold text-[#b53431]">Step 1 of 1</span>

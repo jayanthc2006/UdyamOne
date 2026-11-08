@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import { SiteFooter, SiteHeader } from "@/components/landing";
 import { getCurrentApplicantId } from "@/lib/applicant-session";
+import { workspaceDestinationFor } from "@/lib/role-navigation";
 import {
   type OrderRecordData,
   type OrderSummaryData,
@@ -47,6 +48,11 @@ export default function OrdersPage() {
         expires_at: session.expires_at,
       });
       setPassword("");
+      const destination = workspaceDestinationFor(session.role);
+      if (destination && destination !== "/orders") {
+        // Signed in from the Orders page but not authorised for it.
+        window.location.assign(destination);
+      }
     } catch (loginError) {
       setError(getErrorMessage(loginError));
     } finally {

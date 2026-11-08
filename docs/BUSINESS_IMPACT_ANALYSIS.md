@@ -165,7 +165,7 @@ Every mapping below follows the required structure. **All "expected benefit" sta
 
 ### 6.1 AI Business Advisor + Product Recommendations
 - **Problem**: 1,113 leads dropped at quote stage; 470 "not interested on first call" and 531 "no time for a visit" reflect engagements that never understood the customer's actual need.
-- **Capability**: Multilingual AI advisor (`backend/app/services/advisor/`) extracts requirements conversationally in 5 languages; recommendation engine maps them to catalog bundles.
+- **Capability**: Multilingual AI advisor (`backend/app/services/advisor_service.py`) extracts requirements conversationally in 5 languages; recommendation engine maps them to catalog bundles.
 - **Expected benefit (projected)**: Better-qualified demand reaching the quote stage; fewer "not interested" dead-ends.
 - **KPI**: Quote-acceptance rate on advisor-originated quotes (baseline in this dataset: 43.6%).
 - **Scenario assumptions** (clearly labelled, not measured):

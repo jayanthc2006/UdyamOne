@@ -9,7 +9,9 @@
 
 ## 1. System Architecture Overview
 
-UdyamOne is designed as an AI-powered, modular MSME digital onboarding platform. The architecture decouples client interaction from domain enforcement, ensuring data integrity, strict role boundaries, and auditability across the entire customer lifecycle.
+UdyamOne is designed as an **AI-assisted MSME digital onboarding prototype with an optional external LLM-powered business advisor**. The architecture decouples client interaction from domain enforcement, ensuring data integrity, strict role boundaries, and auditability across the entire customer lifecycle.
+
+**Advisor boundary**: core catalogue recommendations use the existing deterministic recommendation logic; the LLM advisor is optional, is not the authoritative source of catalogue products or pricing, and cannot override catalogue eligibility or the pricing engine. OCR processing remains local — documents and OCR outputs are never sent to the external LLM advisor (the advisor transmits only user-typed chat text and business-profile fields).
 
 ```mermaid
 graph TD
