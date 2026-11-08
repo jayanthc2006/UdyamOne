@@ -150,7 +150,7 @@ sequenceDiagram
 - **`applicant_service.py`**: Manages applicant identity isolation, stable ID generation (`APPL-...`), and authoritative quote preview persistence.
 - **`kyc_service.py`**: Manages uploaded files under `backend/runtime_uploads/`, invokes Windows Media OCR or PyMuPDF, and coordinates manual field corrections.
 - **`registry_verification_service.py`**: Executes deterministic string normalization, fuzzy name/city matching, and input fingerprinting against `mock_gstin_registry.csv` and `mock_udyam_registry.csv`.
-- **`order_service.py`**: Enforces quote validity, generates frozen snapshots, executes atomic transactions, maintains assignment history (`superseded_at`), and appends immutable audit events.
+- **`order_service.py`**: Enforces quote validity, generates frozen snapshots, executes atomic transactions, maintains assignment history (`superseded_at`), and appends application-level append-only events, not tamper-proof records.
 
 ---
 

@@ -52,7 +52,7 @@
 | Monitoring & alerting | **NOT IMPLEMENTED** | Health endpoint exists; no metrics/alerts. |
 | Rate limiting / DDoS protection | **NOT IMPLEMENTED** | |
 | Database concurrency for scale | **NOT IMPLEMENTED** (SQLite + process locks) → **PROPOSED FOR PRODUCTION**: PostgreSQL with row-level locking. | Order operations use `threading.RLock`; single-node assumption documented. |
-| Document retention & automated deletion | **NOT IMPLEMENTED** | **No automatic retention, expiry or deletion exists.** Documents persist locally until manually removed. **PROPOSED FOR PRODUCTION**: configurable retention (recommend ~90 days post-decision, subject to Airtel records policy), approved deletion workflow with dual authorisation, and separate long-term retention of minimal audit records (decision, actor, timestamp) after document files are purged. |
+| Document retention & automated deletion | **NOT IMPLEMENTED** | **No automatic retention, expiry or deletion exists.** Documents persist locally until manually removed. **PROPOSED FOR PRODUCTION**: configurable retention (recommend ~90 days post-decision, subject to the relevant telecom operator's approved records-retention policy), approved deletion workflow with dual authorisation, and separate long-term retention of minimal audit records (decision, actor, timestamp) after document files are purged. |
 | Data backup of KYC manifests | **NOT IMPLEMENTED** | |
 
 ## E. Integrations

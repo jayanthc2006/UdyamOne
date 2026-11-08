@@ -82,7 +82,7 @@ Activated customers represent **₹4.54M monthly recurring bundle value** and **
 | Small multi-site businesses | 755 | 83 | 11.0% | **31,233** |
 | Micro retail & services | 2,709 | 110 | **4.1%** | 2,505 |
 
-**Read**: Micro retail is half the lead volume but the worst converter and lowest value. Multi-site businesses are the revenue engine: 11% of leads, but ₹2.59M of the ₹4.54M total monthly value (**57%**). Manufacturers combine high conversion with high value.
+**Read**: Micro retail is half the lead volume but the worst converter and lowest value. Multi-site businesses are the revenue engine: 15.1% of leads, but ₹2.59M of the ₹4.54M total monthly value (**57%**). Manufacturers combine high conversion with high value.
 
 ![Segment conversion](business_analysis/04_segment_conversion.png)
 

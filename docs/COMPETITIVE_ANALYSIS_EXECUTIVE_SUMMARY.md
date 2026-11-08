@@ -64,7 +64,7 @@ See `BUSINESS_METRIC_RECONCILIATION.md` for the formulas and source reconciliati
 - **Direct CAC = ₹5,385 per activation** (₹1,981,750 spend attributed to activated leads ÷ 368 activations).
 - **Average cost per lead = ₹1,108** (₹5,539,640 ÷ 5,000 leads).
 - **The CAC opportunity:** 64.2% of total acquisition spend (₹3,557,890 of ₹5,539,640) is associated with leads that dropped before activation. This is a share of total acquisition spend, not 64.2% of blended CAC.
-- **Value concentration:** Small multi-site businesses account for 11% of leads but 57% of monthly recurring value, with average monthly value of ₹31,233.
+- **Value concentration:** Small multi-site businesses account for 15.1% of leads but 57% of monthly recurring value, with average monthly value of ₹31,233.
 - **Referral channel:** 14.8% activation at ₹605 direct acquisition cost, approximately twice the overall lead-to-activation conversion rate.
 - **Baseline quality signal:** NPS −25.3 and six-month churn of 15.2% among activations in the synthetic dataset.
 
@@ -135,7 +135,7 @@ Show the Next.js/TypeScript frontend, FastAPI backend, SQLite persistence, local
 - Blended CAC: ₹15,053.
 - Direct CAC: ₹5,385.
 - Acquisition spend associated with dropped leads: 64.2%.
-- Small multi-site businesses: 11% of leads / 57% of monthly recurring value.
+- Small multi-site businesses: 15.1% of leads / 57% of monthly recurring value.
 - Label proposed improvements clearly: quote acceptance 43.6% → +8 percentage points; KYC completion 68.3% → +9 percentage points; follow-up calls 3 → reduction of 1, under the moderate modelled scenario.
 - Message: improving conversion through the funnel is a potential lever for better acquisition economics—not a measured result.
 

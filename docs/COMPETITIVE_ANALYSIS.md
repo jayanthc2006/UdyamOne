@@ -187,7 +187,7 @@ These are potential differentiators based on the reviewed public evidence and cu
 
 ### 5.3 Most valuable MSME segments (from Phase 2 data)
 
-- **Small multi-site businesses** — 11% of leads and 57% of monthly recurring value, with average monthly value of ₹31,233.
+- **Small multi-site businesses** — 15.1% of leads and 57% of monthly recurring value, with average monthly value of ₹31,233.
 - **Small manufacturers** — highest conversion at 12.8%, with average monthly value of ₹19,980.
 - **Micro retail** — the largest volume segment, but converts at 4.1% with average monthly value of ₹2,505. This may favour a low-touch self-service journey rather than a consultative workflow.
 
