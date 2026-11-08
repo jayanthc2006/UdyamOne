@@ -15,7 +15,9 @@ Analysis of 5,000 synthetic SMB leads (April–June 2026) confirms the onboardin
 2. **1,594 leads (31.9%) are never successfully contacted**, with "Unreachable after 3 attempts" (805 leads, 17.4% of all drop reasons) and "Wrong or invalid number" (319) topping the list — a channel-quality problem at the top of the funnel.
 3. **Post-quote KYC drop (273 leads, 31.7% of quote-accepters)** is dominated by document friction ("Missing GST or Udyam document", "Found paperwork too long", "Document details did not match") — precisely the workflow UdyamOne's Smart KYC with local OCR and guided corrections streamlines.
 
-Activated customers represent **₹4.54M monthly recurring bundle value** and **₹5.11M one-time setup revenue**, at a blended **CAC of ₹5,385 per activated lead**. NPS among activated customers is **-25.3** (43.5% detractors) — consistent with a frustrating, opaque process that UdyamOne's tracking and transparency are designed to fix.
+
+Activated customers represent **₹4.54M monthly recurring bundle value** and **₹5.11M estimated one-time setup value**. **Blended CAC is ₹15,053 per activated customer** (₹5,539,640 total funnel spend ÷ 368 activations — matching the case-pack's "approximately ₹15,000"); the direct cost recorded on converted leads alone is ₹5,385 (see `docs/BUSINESS_METRIC_RECONCILIATION.md`). Of the ₹5,539,640 total acquisition spend, ₹3,557,890 (64.2%) is associated with leads that dropped before activation. NPS among activated customers is **-25.3** (43.5% detractors) — consistent with a frustrating, opaque process that UdyamOne's tracking and transparency are designed to fix.
+
 
 **Segment insight**: Micro retail is the largest segment (2,709 leads) but converts at only **4.1%**, while Small multi-site businesses (755 leads, 11.0%) and Small manufacturers (289 leads, 12.8%) convert 2.5–3× better and carry 5–12× the average monthly value. **Referral is the best channel (14.8% activation, ₹605 avg CAC); WhatsApp campaigns are the worst (2.8%).**
 
@@ -133,7 +135,7 @@ Activated customers represent **₹4.54M monthly recurring bundle value** and **
 |---|---:|---|
 | Total monthly bundle value | **₹4,544,990** | Sum of `monthly_bundle_value_inr` for activated leads |
 | Average monthly bundle value | ₹12,351 | Median ₹6,900 — right-skewed by multi-site/manufacturing |
-| Total one-time setup revenue | **₹5,107,500** | One-time, not recurring |
+| Total estimated one-time setup value | **₹5,107,500** | Estimated one-time value, not billed revenue |
 | Total acquisition cost (activated cohort) | ₹1,981,750 | Spend attributed to activated leads |
 | **CAC — per activated lead** | **₹5,385** | ₹1.98M ÷ 368 activated (direct CAC; spend recorded on converted leads only) |
 | CAC — per total lead (stricter) | ₹1,108 | All-cohort spend ÷ 5,000 leads |

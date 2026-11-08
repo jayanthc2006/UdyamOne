@@ -1,8 +1,8 @@
 # Business Metric Reconciliation — CAC & Financial Metrics
 
-**Dataset**: `data/sample_leads/smb_leads.csv` (5,000 leads, Apr–Jun 2026, synthetic competition data)  
-**Reconciliation script**: `scripts/reconcile_metrics.py` (reproducible)  
-**Purpose**: Explain why three CAC figures — ₹5,385, ₹2,197 and the case-pack's "approximately ₹15,000" — differ, and recommend the defensible metric for the Airtel SYNC presentation.
+**Dataset:** `data/sample_leads/smb_leads.csv` (5,000 leads, Apr–Jun 2026, synthetic competition data)
+**Reconciliation script:** `scripts/reconcile_metrics.py` (reproducible)
+**Purpose:** Explain why the case-pack's "approximately ₹15,000" blended CAC, the ₹5,385 direct CAC and the ₹1,108 average acquisition cost per lead differ, and recommend the defensible metrics for the Airtel SYNC presentation.
 
 ---
 
@@ -12,54 +12,73 @@ No records were discarded. `acquisition_cost_inr` is populated for **every** lea
 
 | # | Metric | Formula | Actual value |
 |---|---|---|---:|
-| 1 | Total acquisition cost, all leads | `Σ acquisition_cost_inr` (all 5,000) | **₹5,539,640** |
-| 2 | Acquisition cost among activated leads | `Σ acquisition_cost_inr` (368 activated) | **₹1,981,750** |
-| 3 | Acquisition cost among dropped leads | `Σ acquisition_cost_inr` (4,632 dropped) | **₹3,557,890** |
-| — | Consistency check | (2) + (3) = (1) | ✓ exact (₹5,539,640) |
+| 1 | **Total acquisition spend (all leads)** | `Σ acquisition_cost_inr` (all 5,000 leads) | **₹5,539,640** |
+| 2 | Total acquisition cost (activated cohort) | `Σ acquisition_cost_inr` (368 activated leads) | **₹1,981,750** |
+| 3 | Acquisition cost among dropped leads | `Σ acquisition_cost_inr` (4,632 dropped leads) | **₹3,557,890** |
+| — | Consistency check | (2) + (3) = (1) | ✓ Exact (₹5,539,640) |
 | 4 | Average acquisition cost **per lead** | (1) ÷ 5,000 | **₹1,108** |
-| 5 | **Blended CAC** — all spend ÷ activations | (1) ÷ 368 | **₹15,053** |
-| 6 | **Direct CAC** — activated-lead spend ÷ activations | (2) ÷ 368 | **₹5,385** |
-| 7 | Average monthly bundle value | mean of `monthly_bundle_value_inr` (activated) | **₹12,351** (median ₹6,900) |
-| 8 | Total monthly recurring bundle value | Σ `monthly_bundle_value_inr` (activated) | **₹4,544,990** |
-| 9 | Total one-time setup value | Σ `one_time_setup_inr` (activated) | **₹5,107,500** (avg ₹13,879/activation) |
-| 10a | Six-month churn | churned=Y ÷ 368 | **15.2%** (56 of 368) |
-| 10b | NPS | (promoters − detractors) ÷ 368 | **−25.3** (67 promoters 18.2%, 141 passives 38.3%, 160 detractors 43.5%) |
-| — | Mean days lead→activation | mean `days_lead_to_activation` (activated) | **17.62 days** (median 17) |
-| — | Follow-up calls (activated) | mean / median | **3.01 / 3** |
+| 5 | **Blended CAC — per activated customer** | (1) ÷ 368 activations | **₹15,053** |
+| 6 | **Direct CAC — per activated customer** | (2) ÷ 368 activations | **₹5,385** |
+| 7 | Average monthly bundle value | Mean of `monthly_bundle_value_inr` (activated leads) | **₹12,351** (median ₹6,900) |
+| 8 | Total monthly recurring bundle value | `Σ monthly_bundle_value_inr` (activated leads) | **₹4,544,990** |
+| 9 | Total estimated one-time setup value | `Σ one_time_setup_inr` (activated leads) | **₹5,107,500** (average ₹13,879 per activation) |
+| 10a | Six-month churn | `churned_within_6_months = Y` ÷ 368 | **15.2%** (56 of 368) |
+| 10b | NPS | (Promoters − detractors) ÷ 368 | **−25.3** (67 promoters, 18.2%; 141 passives, 38.3%; 160 detractors, 43.5%) |
+| — | Mean days from lead to activation | Mean `days_lead_to_activation` (activated leads) | **17.62 days** (median 17) |
+| — | Follow-up calls (activated customers) | Mean / median | **3.01 / 3** |
 
-Corroboration of previously published figures: the Phase 2 analysis's ₹5,385 (direct CAC), ₹2,197*, ₹12,351, ₹4.54M, ₹5.11M, 15.2% and −25.3 all reconcile exactly with this independent recalculation.
+**Important distinction:**
+- Blended CAC and direct CAC are both measured per activated customer.
+- ₹1,108 is the average acquisition spend per lead, including both activated and dropped leads. It is not CAC per activated customer.
 
-> *Correction to Phase 2: the stricter "per total lead" CAC was reported as ₹2,197 in `BUSINESS_IMPACT_ANALYSIS.md`. The exact value is **₹1,108** (= ₹5,539,640 ÷ 5,000). The ₹2,197 figure does not correspond to any denominator of the recorded fields and should not be used. This is the only material correction identified.
+Corroboration of previously published figures: the Phase 2 analysis's ₹5,385 direct CAC, ₹12,351 average monthly bundle value, ₹4.54M total monthly bundle value, ₹5.11M estimated one-time setup value, 15.2% churn and −25.3 NPS all reconcile with this independent recalculation.
 
----
-
-## 2. Why the three CAC figures differ — root cause
-
-The three numbers are **all correct for their own definitions**; they differ by numerator and denominator choice, not by any calculation error:
-
-```
-₹15,053  =  ₹5,539,640 (ALL lead spend, incl. 4,632 failures)  ÷  368 activations
-₹5,385   =  ₹1,981,750 (spend on the 368 winners only)         ÷  368 activations
-₹1,108   =  ₹5,539,640 (ALL lead spend)                        ÷  5,000 leads
-```
-
-1. **Different denominators** — the dominant factor. Dividing the same ₹5.54M total spend by 368 activations (₹15,053) instead of 5,000 leads (₹1,108) is a 13.6× difference purely from cohort selection.
-2. **Different numerator populations** — ₹5,385 counts only the acquisition spend recorded against the 368 leads that converted; ₹15,053 spreads every rupee of spend, including ₹3.56M spent on leads that never converted, across the winners.
-3. **Case-pack attribution rule** — the case-pack README's "blended acquisition cost is about ₹15,000 per activated customer" is an **all-in cost-of-acquisition definition**: total funnel spend divided by successful outcomes. Our recalculation reproduces it exactly: **₹5,539,640 ÷ 368 = ₹15,053 ≈ ₹15,000 (1.00×, within rounding)**. There is no discrepancy with the case pack — the case-pack number is simply a different (fully-loaded) metric.
-4. **Case-pack approximate assumptions** — the "about ₹15,000" wording plus our exact ₹15,053 indicates the case-pack computed this same ratio on this dataset. No unrecorded overheads need to be invoked.
-5. **Incorrect calculation** — none found in the funnel, revenue, churn or NPS math. The single Phase 2 error was the ₹2,197 label (see §1 correction).
+> **Correction to Phase 2:** The average acquisition cost per total lead was reported as ₹2,197 in an earlier draft of `BUSINESS_IMPACT_ANALYSIS.md`. The correct value is **₹1,108** (= ₹5,539,640 ÷ 5,000), as verified by `scripts/reconcile_metrics.py`. The ₹2,197 figure does not correspond to any denominator of the recorded fields and must not be used. This was the only material correction identified.
 
 ---
 
-## 3. Recommended defensible CAC metric for the presentation
+## 2. Why the three acquisition-cost figures differ — root cause
 
-**Recommendation: present the case-pack-consistent blended CAC as the headline, with the direct CAC as the secondary metric.**
+The three figures are correct for their respective definitions. They differ because they use different numerator and denominator populations.
 
-- **Headline (use in slides): "Blended CAC ≈ ₹15,000 per activated customer"** — defined explicitly as *total funnel acquisition spend ÷ activated customers* (₹5,539,640 ÷ 368 = ₹15,053). This matches the case-pack framing, is the figure an Airtel business audience will expect, and honestly prices in the cost of the 92.6% of the funnel that leaks.
-- **Secondary (efficiency story): "Direct CAC ₹5,385"** — spend recorded on converted leads only. Frame it as "the spend actually incurred on converted customers; the remaining ~₹9,700 of blended cost is spent on leads the current funnel loses."
-- **Never quote ₹2,197** — it corresponds to no consistent definition.
-- **Always state the formula on the slide** (e.g. `₹55.4L total spend ÷ 368 activations`), because a bare "₹15,000 CAC" against a "₹5,385 CAC" elsewhere in the deck will look inconsistent to evaluators.
-- **The strategic takeaway that is defensible from these numbers**: with 92.6% funnel leakage, roughly **65% of blended CAC (₹3.56M of ₹5.54M) is spent on leads that never activate**. A funnel that converts even a few percentage points better materially reduces blended CAC — this is the honest, arithmetic-backed version of the "UdyamOne lowers CAC" claim, and it must be presented as a *modelled* effect, not an achieved one.
+```text
+₹15,053 = ₹5,539,640 (ALL lead acquisition spend)
+          ÷ 368 activated customers
+
+₹5,385  = ₹1,981,750 (spend attributed to activated leads only)
+          ÷ 368 activated customers
+
+₹1,108  = ₹5,539,640 (ALL lead acquisition spend)
+          ÷ 5,000 total leads
+```
+
+1. **Different denominators:** This is the dominant factor. Dividing the same ₹5.54M total spend by 368 activations gives ₹15,053 per activated customer. Dividing it by 5,000 leads gives an average of ₹1,108 per lead.
+
+2. **Different numerator populations:** ₹5,385 counts only the acquisition spend attributed to the 368 leads that converted. ₹15,053 spreads all acquisition spend, including ₹3.56M associated with leads that did not convert, across the 368 activated customers.
+
+3. **Case-pack attribution rule:** The case-pack README's "blended acquisition cost is about ₹15,000 per activated customer" uses an all-in acquisition-cost definition: total funnel spend divided by successful outcomes. Our recalculation reproduces it: **₹5,539,640 ÷ 368 = ₹15,053 ≈ ₹15,000**. There is no discrepancy with the case pack.
+
+4. **Case-pack approximate figure:** The case-pack's approximate ₹15,000 figure is consistent with the calculated ₹15,053. No unrecorded overheads need to be assumed.
+
+5. **Earlier calculation error:** The ₹2,197 figure in the earlier Phase 2 draft was incorrect. The correct average acquisition cost per lead is ₹1,108, as shown in section 1.
+
+---
+
+## 3. Recommended defensible metrics for the presentation
+
+**Recommendation: present blended CAC as the headline, direct CAC as the secondary metric, and average acquisition cost per lead only when discussing lead-level spend.**
+
+- **Headline — "Blended CAC = ₹15,053 per activated customer."** This is total acquisition spend divided by activated customers (₹5,539,640 ÷ 368 = ₹15,053). It matches the case-pack framing and includes the cost associated with leads that do not convert.
+
+- **Secondary — "Direct CAC = ₹5,385 per activated customer."** This uses only acquisition spend attributed to the activated leads (₹1,981,750 ÷ 368). It describes the acquisition cost recorded against converted leads, excluding spend attributed to dropped leads.
+
+- **Lead-level metric — "Average acquisition cost = ₹1,108 per lead."** This uses total acquisition spend divided by all 5,000 leads. Do not label this figure as CAC per activated customer.
+
+- **Never quote the earlier ₹2,197 figure.** The correct average acquisition cost per total lead is ₹1,108.
+
+- **Always state the formula on the slide.** For example: `₹5,539,640 total acquisition spend ÷ 368 activations = ₹15,053 blended CAC`. This prevents confusion when the ₹5,385 direct CAC also appears elsewhere in the presentation.
+
+- **Strategic takeaway:** **64.2% of total acquisition spend (₹3,557,890 of ₹5,539,640) is associated with leads that never activate.** This is a share of total acquisition spend, not 64.2% of blended CAC. Improving conversion could reduce blended CAC, but any improvement must be presented as a modelled opportunity, not an achieved outcome.
 
 ---
 
@@ -68,21 +87,25 @@ The three numbers are **all correct for their own definitions**; they differ by 
 | Term | Definition used here |
 |---|---|
 | Acquisition cost (`acquisition_cost_inr`) | Sales-and-partner spend recorded against each individual lead |
+| Total acquisition spend | Sum of acquisition costs across all 5,000 leads |
 | Blended CAC | Total acquisition spend across the whole funnel ÷ number of activated customers |
-| Direct CAC | Acquisition spend recorded on activated leads ÷ activated customers |
-| Monthly recurring bundle value | `monthly_bundle_value_inr` — estimated recurring monthly revenue of the activated bundle (not billed revenue) |
-| One-time setup value | `one_time_setup_inr` — non-recurring; always reported separately from recurring value |
-| Churn (6-month) | `churned_within_6_months = Y` among activated leads |
-| NPS | % promoters (score ≥9) − % detractors (score ≤6) among activated leads |
+| Direct CAC | Acquisition spend recorded on activated leads ÷ number of activated customers |
+| Average acquisition cost per lead | Total acquisition spend ÷ all leads, including activated and dropped leads |
+| Monthly recurring bundle value | `monthly_bundle_value_inr` — estimated recurring monthly value of the activated bundle, not billed revenue |
+| One-time setup value | `one_time_setup_inr` — estimated, non-recurring value, reported separately from recurring value and not treated as billed revenue |
+| Six-month churn | `churned_within_6_months = Y` among activated leads |
+| NPS | Percentage of promoters (score ≥9) minus percentage of detractors (score ≤6) among activated leads |
 
-All values are synthetic competition data and estimates, not billed financials.
+All values are based on synthetic competition data. Revenue-related fields represent estimates, not verified billed financials.
 
 ---
 
 ## 5. Reproducibility
 
+Run from the repository root:
+
 ```powershell
 .\.venv\Scripts\python.exe scripts\reconcile_metrics.py
 ```
 
-The script prints every value in §1 from the raw CSV in one pass, including the (2)+(3)=(1) consistency check and the 1.00× case-pack reconciliation factor.
+The script prints the values in section 1 from the raw CSV in one pass, including the (2) + (3) = (1) consistency check and the case-pack blended-CAC reconciliation.

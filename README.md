@@ -1,7 +1,9 @@
 # UdyamOne
 
-UdyamOne is a FastAPI backend project. This initial scaffold provides a
-health-check endpoint and separates API, model, schema, and service layers.
+UdyamOne is a full-stack MSME digital-onboarding prototype for Airtel SYNC 2026 (Project Udyam Digital, Team PulseForge): a Next.js/TypeScript frontend over a FastAPI/Python backend with SQLite persistence. It implements one connected journey — guided business onboarding, an optional AI business advisor, catalogue-backed product recommendations, itemised estimated quotations, consent-based Smart KYC with local OCR and auditable corrections, synthetic GSTIN/Udyam verification, quote-to-order conversion, an operations dashboard, partner fulfilment and a customer-visible order timeline ending in simulated activation.
+
+> **Prototype disclosures**: business-registry checks use the supplied synthetic competition datasets (no live GSTN/Udyam APIs are queried), order pricing is estimated and non-binding, and activation is simulated — no real telecom provisioning occurs.
+
 
 ## Prerequisites
 
