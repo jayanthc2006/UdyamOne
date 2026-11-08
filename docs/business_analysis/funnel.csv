@@ -1,0 +1,7 @@
+stage,leads_reached,conversion_from_previous_pct,conversion_from_lead_pct,drop_off_from_previous,drop_off_pct_of_previous
+Lead,5000,100.0,100.0,0,0.0
+Contacted,3406,68.1,68.1,1594,31.9
+Needs assessed,1974,58.0,39.5,1432,42.0
+Quote accepted,861,43.6,17.2,1113,56.4
+KYC complete,588,68.3,11.8,273,31.7
+Activated,368,62.6,7.4,220,37.4

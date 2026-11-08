@@ -5,6 +5,7 @@ remain the source of domain behaviour. This store only associates their outputs
 with a generated applicant identifier across server restarts.
 """
 
+import os
 import re
 import sqlite3
 import threading
@@ -16,7 +17,7 @@ from app.models.applicant import ApplicantProfile, ApplicantRecord
 from app.models.pricing import QuoteResponse
 from app.models.recommendation import RecommendationResponse
 
-APPLICANT_DATABASE_PATH = Path(__file__).resolve().parents[2] / "runtime_data" / "applicants.sqlite3"
+APPLICANT_DATABASE_PATH = Path(os.getenv("UDYAMONE_DB_PATH", str(Path(__file__).resolve().parents[2] / "runtime_data" / "applicants.sqlite3")))
 _APPLICANT_ID_PATTERN = re.compile(r"APPL-[0-9a-f]{32}")
 _DATABASE_LOCK = threading.RLock()
 

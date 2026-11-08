@@ -226,6 +226,13 @@ Run the backend regression suite from the repository root with:
 
 ## Key Documentation
 
+- [`docs/PRIVACY_AND_SECURITY_NOTE.md`](docs/PRIVACY_AND_SECURITY_NOTE.md) — One-page competition privacy note (consent, data minimisation, local OCR, retention behaviour, prototype limits).
+- [`docs/SECURITY_REVIEW.md`](docs/SECURITY_REVIEW.md) — Implementation-backed security assessment with role matrix and test evidence.
+- [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) — Production hardening checklist with IMPLEMENTED / PARTIAL / NOT IMPLEMENTED / PROPOSED classifications.
+- [`docs/security/THREAT_REGISTER.md`](docs/security/THREAT_REGISTER.md) — KYC data-flow diagram and threat register.
+- [`docs/BUSINESS_IMPACT_ANALYSIS.md`](docs/BUSINESS_IMPACT_ANALYSIS.md) — SMB-lead business analysis (funnel, economics, impact scenarios).
+- [`docs/BUSINESS_METRIC_RECONCILIATION.md`](docs/BUSINESS_METRIC_RECONCILIATION.md) — CAC definitions and reconciliation (blended ₹15,053 vs direct ₹5,385).
+- [`docs/COMPETITIVE_ANALYSIS.md`](docs/COMPETITIVE_ANALYSIS.md) and [`docs/COMPETITIVE_ANALYSIS_EXECUTIVE_SUMMARY.md`](docs/COMPETITIVE_ANALYSIS_EXECUTIVE_SUMMARY.md) — Competitor research with evidence register.
 - [`docs/PHASE5_DELIVERY_REPORT.md`](docs/PHASE5_DELIVERY_REPORT.md) — Phase 5 technical delivery report, state machine, API endpoints, and verification audit matrix.
 - [`docs/TECHNICAL_ARCHITECTURE.md`](docs/TECHNICAL_ARCHITECTURE.md) — System architecture, Mermaid sequence diagrams, domain service layers, security, and production roadmap.
 - [`docs/LOCAL_DEMO_SETUP.md`](docs/LOCAL_DEMO_SETUP.md) — Local development setup, environment variables, prototype account configuration, and test instructions.

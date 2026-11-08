@@ -1,0 +1,67 @@
+{
+  "total_leads": 5000,
+  "funnel": {
+    "Lead": {
+      "leads_reached": 5000,
+      "conversion_from_previous_pct": 100.0,
+      "conversion_from_lead_pct": 100.0,
+      "drop_off_from_previous": 0,
+      "drop_off_pct_of_previous": 0.0
+    },
+    "Contacted": {
+      "leads_reached": 3406,
+      "conversion_from_previous_pct": 68.1,
+      "conversion_from_lead_pct": 68.1,
+      "drop_off_from_previous": 1594,
+      "drop_off_pct_of_previous": 31.9
+    },
+    "Needs assessed": {
+      "leads_reached": 1974,
+      "conversion_from_previous_pct": 58.0,
+      "conversion_from_lead_pct": 39.5,
+      "drop_off_from_previous": 1432,
+      "drop_off_pct_of_previous": 42.0
+    },
+    "Quote accepted": {
+      "leads_reached": 861,
+      "conversion_from_previous_pct": 43.6,
+      "conversion_from_lead_pct": 17.2,
+      "drop_off_from_previous": 1113,
+      "drop_off_pct_of_previous": 56.4
+    },
+    "KYC complete": {
+      "leads_reached": 588,
+      "conversion_from_previous_pct": 68.3,
+      "conversion_from_lead_pct": 11.8,
+      "drop_off_from_previous": 273,
+      "drop_off_pct_of_previous": 31.7
+    },
+    "Activated": {
+      "leads_reached": 368,
+      "conversion_from_previous_pct": 62.6,
+      "conversion_from_lead_pct": 7.4,
+      "drop_off_from_previous": 220,
+      "drop_off_pct_of_previous": 37.4
+    }
+  },
+  "activated_count": 368,
+  "unit_economics": {
+    "activated_leads": 368,
+    "total_monthly_bundle_value_inr": 4544990,
+    "avg_monthly_bundle_value_inr": 12351.0,
+    "median_monthly_bundle_value_inr": 6900.0,
+    "total_one_time_setup_inr": 5107500,
+    "total_acquisition_cost_inr": 1981750,
+    "cac_per_activated_lead_inr": 5385.0,
+    "cac_per_total_lead_inr": 1108.0,
+    "churn_within_6_months_pct": 15.2,
+    "nps_mean": 6.86,
+    "nps_median": 7.0,
+    "nps_min": 2,
+    "nps_max": 10,
+    "nps_promoters_pct": 18.2,
+    "nps_detractors_pct": 43.5,
+    "nps_net": -25.3
+  },
+  "cac_strict": 15053.0
+}

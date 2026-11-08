@@ -1,0 +1,5 @@
+segment,activated,monthly_value_sum,monthly_value_avg,setup_sum,acq_sum,acq_avg,churn_n,cac_per_activated_inr
+Micro retail & services,110,275530.0,2505.0,211100.0,295730,2688.0,25,2688.0
+Professional offices,138,937830.0,6796.0,283500.0,575370,4169.0,19,4169.0
+Small manufacturers,37,739250.0,19980.0,862200.0,355430,9606.0,3,9606.0
+Small multi-site businesses,83,2592380.0,31233.0,3750700.0,755220,9099.0,9,9099.0

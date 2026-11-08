@@ -1,0 +1,17 @@
+,value
+activated_leads,368.0
+total_monthly_bundle_value_inr,4544990.0
+avg_monthly_bundle_value_inr,12351.0
+median_monthly_bundle_value_inr,6900.0
+total_one_time_setup_inr,5107500.0
+total_acquisition_cost_inr,1981750.0
+cac_per_activated_lead_inr,5385.0
+cac_per_total_lead_inr,1108.0
+churn_within_6_months_pct,15.2
+nps_mean,6.86
+nps_median,7.0
+nps_min,2.0
+nps_max,10.0
+nps_promoters_pct,18.2
+nps_detractors_pct,43.5
+nps_net,-25.3

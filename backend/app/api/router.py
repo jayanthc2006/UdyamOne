@@ -1,5 +1,7 @@
 """Top-level API router."""
 
+import os
+
 from fastapi import APIRouter
 
 from app.api.advisor import router as advisor_router
@@ -26,3 +28,8 @@ api_router.include_router(eligibility_router)
 api_router.include_router(kyc_router)
 api_router.include_router(quotes_router)
 api_router.include_router(recommendations_router)
+
+if os.getenv("UDYAMONE_QA_MODE") == "1":
+    from app.api.qa import router as qa_router
+
+    api_router.include_router(qa_router)

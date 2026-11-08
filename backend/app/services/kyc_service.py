@@ -10,6 +10,7 @@ import threading
 import uuid
 from datetime import date, datetime, timezone
 from io import BytesIO
+import os
 from pathlib import Path
 from typing import Any, Literal, Mapping
 
@@ -34,7 +35,7 @@ from app.services import applicant_service, registry_verification_service
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SAMPLE_KYC_ROOT = PROJECT_ROOT / "data" / "sample_kyc"
-UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "runtime_uploads"
+UPLOAD_ROOT = Path(os.getenv("UDYAMONE_UPLOAD_ROOT", str(Path(__file__).resolve().parents[2] / "runtime_uploads")))
 OCR_SCRIPT = Path(__file__).with_name("local_ocr.ps1")
 APPLICANT_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024

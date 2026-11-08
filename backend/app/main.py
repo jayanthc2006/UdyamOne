@@ -40,5 +40,11 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
+import os
+...
 app.include_router(health_router)
 app.include_router(api_router)
+if os.getenv("UDYAMONE_QA_MODE") == "1":
+    from app.api.qa import router as qa_router
+
+    app.include_router(qa_router)
